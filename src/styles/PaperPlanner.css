@@ -1398,3 +1398,69 @@ body[data-swipe-direction="right"] .card-container {
     font-size: 1.125rem !important;
   }
 }
+/* --- Header Styling --- */
+header.bg-white.shadow-sm {
+  z-index: var(--z-index-header) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+}
+
+header .container {
+  min-height: 60px;
+}
+
+/* REMOVE THIS ENTIRE BLOCK or comment it out */
+/*
+header.bg-white.shadow-sm .container button[aria-label="Help"],
+header.bg-white.shadow-sm .container button[aria-label="Save"] {
+  max-width: 5.5rem !important;
+  width: 5.5rem !important;
+  min-width: 0 !important;
+  padding: 0.5rem 0.5rem !important;
+  margin: 0 !important;
+  font-size: 0.875rem !important;
+  line-height: 1.25rem !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 0.375rem !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+*/
+
+header button { /* General button styling in header */
+  padding: 0.5rem 0.75rem !important; /* This was py-2 px-3 in getTightButtonClasses (0.5rem, 0.75rem) */
+  border-radius: 0.375rem !important;
+  border-color: #e2e8f0 !important; /* Tailwind gray-300 */
+  font-size: 0.875rem !important; /* text-sm */
+  line-height: 1.25rem !important; /* leading-tight or leading-5 */
+  transition: all 0.15s ease-in-out !important;
+}
+
+header button:hover:not(:disabled) {
+  background-color: #f8fafc !important; /* Tailwind gray-50 */
+  transform: translateY(-1px) !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05) !important;
+}
+
+header button:active:not(:disabled) {
+  transform: translateY(0) !important;
+}
+
+header button svg {
+  width: 1rem !important; /* h-4 w-4 */
+  height: 1rem !important;
+  margin-right: 0.25rem !important; /* This was mr-2 (0.5rem), so CSS is making it tighter */
+  flex-shrink: 0 !important;
+}
+
+header.bg-white.shadow-sm .container button .animate-spin {
+  margin-right: 0.25rem !important;
+}
+
+/* This might be too generic if it affects other buttons in the header accidentally */
+/*
+header.bg-white.shadow-sm .container button span {
+  padding: 0 !important;
+  margin: 0 !important;
+}
+*/
