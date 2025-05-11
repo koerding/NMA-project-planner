@@ -1,4 +1,6 @@
 // FILE: src/services/instructionImprovementService.js
+// MODIFIED: Corrected import path for appStore.
+// MODIFIED: Does not send previous feedback context to the AI.
 
 /**
  * Enhanced service for improving instructions based on user progress
@@ -10,7 +12,7 @@
 import { callOpenAI } from './openaiService';
 import { buildSystemPrompt } from '../utils/promptUtils';
 import sectionContentData from '../data/sectionContent.json';
-import useAppStore from '../../store/appStore'; // Import Zustand store to access full section state
+import useAppStore from '../store/appStore'; // Import Zustand store to access full section state - CORRECTED PATH
 
 /**
  * Improves instructions for multiple sections using a structured JSON approach.
