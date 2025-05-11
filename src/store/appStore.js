@@ -3,7 +3,7 @@
 // MODIFIED: Added setActiveSectionId and enhanced setUiMode functions
 // MODIFIED: Enhanced setUiMode with scroll position management
 // MODIFIED: Added sectionDefinitions to store state for guide mode display
-
+// MODIFIED: Set proMode to true by default and modified setProMode to reflect this.
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import sectionContent from '../data/sectionContent.json';
@@ -27,8 +27,8 @@ const getInitialSectionStates = () => {
             content: section.placeholder || '',
             originalInstructions: section.subsections || [], // Keep original instructions
             aiInstructions: null, // AI feedback starts as null
-            isMinimized: false, // Start with only question expanded
-            isVisible: isQuestion, // Start with only question visible (progression logic handles others)
+            isMinimized: false, 
+            isVisible: true, // All sections visible due to proMode true by default
             feedbackRating: null, // Feedback rating starts as null
             editedSinceFeedback: false, // Not edited initially
             lastEditTimestamp: 0, // Timestamp for edit tracking
@@ -42,7 +42,7 @@ const initialState = {
     sections: getInitialSectionStates(),
     activeToggles: { approach: 'hypothesis', dataMethod: 'experiment' },
     scores: {},
-    proMode: false, // Start with proMode false
+    proMode: true, // Set proMode to true by default
     modals: {
         confirmDialog: false, examplesDialog: false, reviewModal: false,
         privacyPolicy: false, saveDialog: false
@@ -58,13 +58,9 @@ const initialState = {
     chatMessages: {},
     currentChatMessage: '',
     currentChatSectionId: 'question',
-    _forceUpdate: 0, // Dummy state for workaround
-    
-    // --- UI MODE STATE ---
-    uiMode: 'write', // 'write' or 'guide'
-    
-    // --- SECTION DEFINITIONS ---
-    sectionDefinitions: sectionContent.sections || [], // Store section definitions for guide mode
+    _forceUpdate: 0, 
+    uiMode: 'write', 
+    sectionDefinitions: sectionContent.sections || [], 
 };
 
 
@@ -72,9 +68,8 @@ const initialState = {
 const useAppStore = create(
   persist(
     (set, get) => ({
-      ...initialState, // Spread the initial state
+      ...initialState, 
 
-      // --- Enhanced Combined Loading Getter ---
       isAnyLoading: () => {
         const loadingValues = Object.values(get().loading);
         const isRegularLoading = loadingValues.some(Boolean);
@@ -82,31 +77,25 @@ const useAppStore = create(
         return isRegularLoading || isGlobalLoading;
       },
 
-      // --- New Global AI Loading Setter ---
       setGlobalAiLoading: (status) => {
         console.log(`Setting globalAiLoading to ${status}`);
         set({ globalAiLoading: status });
       },
 
-      // --- ENHANCED UI MODE ACTION ---
       setUiMode: (mode) => set((state) => {
         if (mode !== 'write' && mode !== 'guide') {
           console.error(`Invalid UI mode: ${mode}. Must be 'write' or 'guide'`);
           return state;
         }
         
-        // Get section info
         const currentSectionId = state.currentChatSectionId;
         const lastSectionId = localStorage.getItem('lastActiveSectionId');
         const targetSectionId = currentSectionId || lastSectionId || 'question';
         
-        // Check if we're switching from write to guide or vice versa
         const prevMode = state.uiMode;
         const isModeSwitching = prevMode !== mode;
         
-        // SCROLL MANAGEMENT: Store current scroll position when leaving write mode
         if (isModeSwitching && prevMode === 'write') {
-          // Store the current scroll position for write mode
           const contentEl = document.querySelector('.main-content');
           if (contentEl) {
             localStorage.setItem('writeScrollPosition', contentEl.scrollTop);
@@ -114,40 +103,28 @@ const useAppStore = create(
           }
         }
         
-        // If we have a valid section ID, ensure that section is in focus
         if (targetSectionId && state.sections && state.sections[targetSectionId]) {
           const updatedSections = { ...state.sections };
-          
-          // Update section focus flags
           Object.keys(updatedSections).forEach(id => {
             if (updatedSections[id]) {
-              updatedSections[id] = {
-                ...updatedSections[id],
-                isCurrentSection: id === targetSectionId
-              };
+              updatedSections[id] = { ...updatedSections[id], isCurrentSection: id === targetSectionId };
             }
           });
           
-          // Schedule scroll management after state update completes
           setTimeout(() => {
             if (isModeSwitching) {
               if (mode === 'guide') {
-                // Entering guide mode: Scroll to top
                 const contentEl = document.querySelector('.main-content');
                 if (contentEl) {
                   contentEl.scrollTo({ top: 0, behavior: 'smooth' });
                   console.log('Scrolled to top for guide mode');
                 }
               } else if (mode === 'write') {
-                // Returning to write mode: Restore previous scroll position
                 const storedScrollPos = localStorage.getItem('writeScrollPosition');
                 if (storedScrollPos) {
                   const contentEl = document.querySelector('.main-content');
                   if (contentEl) {
-                    contentEl.scrollTo({ 
-                      top: parseInt(storedScrollPos, 10), 
-                      behavior: 'smooth' 
-                    });
+                    contentEl.scrollTo({ top: parseInt(storedScrollPos, 10), behavior: 'smooth' });
                     console.log(`Restored write scroll position: ${storedScrollPos}px`);
                   }
                 }
@@ -155,75 +132,62 @@ const useAppStore = create(
             }
           }, 50);
           
-          // Return updated state with new mode and focused section
-          return { 
-            uiMode: mode, 
-            sections: updatedSections, 
-            currentChatSectionId: targetSectionId 
-          };
+          return { uiMode: mode, sections: updatedSections, currentChatSectionId: targetSectionId };
         }
         
-        // Simple mode change if no valid section
         return { uiMode: mode };
       }),
 
-      // --- Actions for Core State ---
       updateSectionContent: (sectionId, content) => set((state) => {
           if (!state.sections[sectionId]) return state;
             return { sections: { ...state.sections, [sectionId]: { ...state.sections[sectionId], content: content, lastEditTimestamp: Date.now(), editedSinceFeedback: state.sections[sectionId]?.feedbackRating !== null, }, }, };
       }),
       toggleMinimize: (sectionId) => set((state) => {
-          if (!state.sections[sectionId]) return state;
-          return { sections: { ...state.sections, [sectionId]: { ...state.sections[sectionId], isMinimized: !state.sections[sectionId].isMinimized, }, }, };
+          if (!state.sections[sectionId]) return state; // Should not be called as sections are always expanded
+          return state; // No change, sections always expanded
       }),
       setActiveToggle: (groupKey, sectionId) => set((state) => {
           const newActiveToggles = { ...state.activeToggles, [groupKey]: sectionId };
-            const updatedSections = { ...state.sections };
-            const { unlockedSections } = calculateUnlockedSections(state.scores, newActiveToggles);
+            const updatedSections = { ...state.sections }; // Pro mode is always true, all sections are visible based on toggles
             Object.keys(updatedSections).forEach(sId => {
               if (!updatedSections[sId]) return;
               const sectionDef = sectionContent.sections.find(s => s.id === sId);
-              let isVisible = state.proMode || unlockedSections.includes(sId);
-              if (isVisible) {
-                if (sectionDef?.category === 'approach' && sId !== newActiveToggles.approach) isVisible = false;
-                else if (sectionDef?.category === 'dataMethod' && sId !== newActiveToggles.dataMethod) isVisible = false;
-              }
+              let isVisible = true; // All sections visible by default
+              if (sectionDef?.category === 'approach' && sId !== newActiveToggles.approach) isVisible = false;
+              else if (sectionDef?.category === 'dataMethod' && sId !== newActiveToggles.dataMethod) isVisible = false;
               updatedSections[sId] = { ...updatedSections[sId], isVisible: isVisible };
             });
             return { activeToggles: newActiveToggles, sections: updatedSections };
        }),
-       setProMode: (enabled) => set((state) => {
-          const updatedSections = { ...state.sections };
-          const currentScores = state.scores;
-          const currentToggles = state.activeToggles;
-          const { unlockedSections } = calculateUnlockedSections(currentScores, currentToggles);
-          Object.keys(updatedSections).forEach(sId => {
-              if (!updatedSections[sId]) return;
-              const sectionDef = sectionContent.sections.find(s => s.id === sId);
-              let isVisible = enabled || unlockedSections.includes(sId);
-              if (isVisible) {
-                  if (sectionDef?.category === 'approach' && sId !== currentToggles.approach) isVisible = false;
-                  else if (sectionDef?.category === 'dataMethod' && sId !== currentToggles.dataMethod) isVisible = false;
-              }
-              updatedSections[sId] = { ...updatedSections[sId], isVisible: isVisible };
-          });
-          return { proMode: enabled, sections: updatedSections };
+       setProMode: (enabled) => set((state) => { // This function now effectively does nothing as proMode is always true
+            console.log("ProMode is always enabled. This toggle has no effect.");
+            // Ensure all sections remain visible as per proMode true logic
+            const updatedSections = { ...state.sections };
+            const currentToggles = state.activeToggles;
+            Object.keys(updatedSections).forEach(sId => {
+                if (!updatedSections[sId]) return;
+                const sectionDef = sectionContent.sections.find(s => s.id === sId);
+                let isVisible = true; // All sections visible
+                if (sectionDef?.category === 'approach' && sId !== currentToggles.approach) isVisible = false;
+                else if (sectionDef?.category === 'dataMethod' && sId !== currentToggles.dataMethod) isVisible = false;
+                updatedSections[sId] = { ...updatedSections[sId], isVisible: isVisible };
+            });
+            return { proMode: true, sections: updatedSections }; // Always ensure proMode is true
       }),
       updateSectionFeedback: (sectionId, feedbackData) => set((state) => {
             if (!state.sections[sectionId]) return state;
             const rating = feedbackData?.rating;
             const newScores = { ...state.scores, [sectionId]: rating };
-            const { unlockedSections } = calculateUnlockedSections(newScores, state.activeToggles);
+            // Since proMode is always true, unlockedSections logic for visibility is overridden.
+            // Visibility is determined by activeToggles for approach/dataMethod sections.
             const updatedSections = { ...state.sections };
             Object.keys(updatedSections).forEach(sId => {
                 if (!updatedSections[sId]) return;
                 const isCurrentSection = sId === sectionId;
                 const sectionDef = sectionContent.sections.find(s => s.id === sId);
-                let isVisible = state.proMode || unlockedSections.includes(sId);
-                 if (isVisible) {
-                    if (sectionDef?.category === 'approach' && sId !== state.activeToggles.approach) isVisible = false;
-                    else if (sectionDef?.category === 'dataMethod' && sId !== state.activeToggles.dataMethod) isVisible = false;
-                 }
+                let isVisible = true; // All sections visible
+                 if (sectionDef?.category === 'approach' && sId !== state.activeToggles.approach) isVisible = false;
+                 else if (sectionDef?.category === 'dataMethod' && sId !== state.activeToggles.dataMethod) isVisible = false;
                 updatedSections[sId] = {
                     ...updatedSections[sId],
                     isVisible: isVisible,
@@ -236,70 +200,53 @@ const useAppStore = create(
        }),
       resetState: () => set({
         ...initialState,
+        proMode: true, // Ensure proMode stays true on reset
+        sections: getInitialSectionStates(), // Re-initialize sections with proMode true visibility
         onboarding: { ...initialState.onboarding, showHelpSplash: get().onboarding.showHelpSplash }
       }),
 
-      // --- New function to set the active section ID ---
       setActiveSectionId: (sectionId) => set((state) => {
-        // Make sure we're working with a valid section ID
         if (!sectionId || !state.sections || !state.sections[sectionId]) {
           console.warn(`Invalid section ID: ${sectionId}`);
           return state;
         }
-        
-        // Update the isCurrentSection flag for all sections
         const updatedSections = { ...state.sections };
         Object.keys(updatedSections).forEach(id => {
           if (updatedSections[id]) {
-            updatedSections[id] = {
-              ...updatedSections[id],
-              isCurrentSection: id === sectionId
-            };
+            updatedSections[id] = { ...updatedSections[id], isCurrentSection: id === sectionId };
           }
         });
-        
-        return { 
-          sections: updatedSections, 
-          currentChatSectionId: sectionId  // Also update chat context
-        };
+        return { sections: updatedSections, currentChatSectionId: sectionId };
       }),
 
-      // Load Project Data Action with WORKAROUND
-      loadProjectData: (data) => { // Use set directly, not inside callback for initial part
+      loadProjectData: (data) => {
         console.log("Attempting to load project data (original format):", data);
-
-        // Default values
         let loadedUserInputs = {};
         let loadedChatMessages = {};
         let detectedApproach = 'hypothesis';
         let detectedDataMethod = 'experiment';
 
-        // --- Determine loaded content and detected toggles ---
         if (data && typeof data === 'object') {
             if (data.userInputs && typeof data.userInputs === 'object') {
                 loadedUserInputs = data.userInputs;
                 loadedChatMessages = data.chatMessages || {};
-                // Check for detected toggles if structure provides them
                 if (data.detectedToggles) {
                    detectedApproach = data.detectedToggles.approach || detectedApproach;
                    detectedDataMethod = data.detectedToggles.dataMethod || detectedDataMethod;
                 }
             } else if (data.sections && typeof data.sections === 'object') {
-                // Assume keys are section IDs
                 loadedUserInputs = Object.entries(data.sections).reduce((acc, [id, sectionData]) => {
                     acc[id] = typeof sectionData === 'string' ? sectionData : (sectionData?.content || '');
                     return acc;
                 }, {});
                 loadedChatMessages = data.chatMessages || {};
-                // Use passed detected toggles
                  if(data.detectedToggles) {
                     detectedApproach = data.detectedToggles.approach || detectedApproach;
                     detectedDataMethod = data.detectedToggles.dataMethod || detectedDataMethod;
                  }
             } else if (data.question || data.abstract || data.audience) {
-                loadedUserInputs = data; // Assume data is the userInputs
+                loadedUserInputs = data; 
                 loadedChatMessages = {};
-                // Use passed detected toggles if available (might be from import hook)
                  if(data.detectedToggles) {
                     detectedApproach = data.detectedToggles.approach || detectedApproach;
                     detectedDataMethod = data.detectedToggles.dataMethod || detectedDataMethod;
@@ -307,21 +254,20 @@ const useAppStore = create(
             } else {
                  console.error("Invalid project data format for loading. Aborting load.");
                  alert("Failed to load project: Invalid file format.");
-                 return; // Exit early
+                 return; 
             }
         } else {
              console.error("Invalid project data format for loading. Aborting load.");
              alert("Failed to load project: Invalid file format.");
-             return; // Exit early
+             return; 
         }
 
-        const initialSections = getInitialSectionStates(); // Get fresh initial structure
+        const initialSections = getInitialSectionStates(); 
         const mergedSections = {};
         const newActiveToggles = { approach: detectedApproach, dataMethod: detectedDataMethod };
         const loadedScores = data.scores || {};
-        const loadedProMode = data.proMode !== undefined ? data.proMode : true;
+        // const loadedProMode = data.proMode !== undefined ? data.proMode : true; // ProMode always true now
 
-        // Merge logic (simplified explanation, assumes full logic is complex but aims to create mergedSections)
         const sourceSections = data.sections && typeof data.sections === 'object' && typeof Object.values(data.sections)[0] === 'object'
             ? data.sections : initialSections;
         Object.keys(initialSections).forEach(id => {
@@ -333,65 +279,49 @@ const useAppStore = create(
                 aiInstructions: sourceSectionData.aiInstructions || null,
                 feedbackRating: sourceSectionData.feedbackRating || null,
                 editedSinceFeedback: sourceSectionData.editedSinceFeedback || false,
-                isMinimized: sourceSectionData.isMinimized !== undefined ? sourceSectionData.isMinimized : false,
+                isMinimized: false, // Always expanded in pro mode
             };
         });
 
-        // Recalculate visibility based on loaded toggles and scores
-        const { unlockedSections } = calculateUnlockedSections(loadedScores, newActiveToggles);
+        // Visibility determined by proMode (always true) and activeToggles
         Object.keys(mergedSections).forEach(sId => {
             const sectionDef = sectionContent.sections.find(s => s.id === sId);
-            let isVisible = loadedProMode || unlockedSections.includes(sId);
-            if (isVisible) {
-                if (sectionDef?.category === 'approach' && sId !== newActiveToggles.approach) isVisible = false;
-                else if (sectionDef?.category === 'dataMethod' && sId !== newActiveToggles.dataMethod) isVisible = false;
-            }
-             if (sId === 'question') isVisible = true;
+            let isVisible = true; // All sections visible by default
+            if (sectionDef?.category === 'approach' && sId !== newActiveToggles.approach) isVisible = false;
+            else if (sectionDef?.category === 'dataMethod' && sId !== newActiveToggles.dataMethod) isVisible = false;
             mergedSections[sId].isVisible = isVisible;
         });
 
-        // Prepare the final state object for the initial set
         const newState = {
             sections: mergedSections,
             activeToggles: newActiveToggles,
             scores: loadedScores,
-            proMode: loadedProMode,
+            proMode: true, // Ensure proMode is true on load
             chatMessages: loadedChatMessages,
-            // Reset UI state on load
             modals: initialState.modals,
             loading: initialState.loading,
             globalAiLoading: false,
             reviewData: null,
             currentChatMessage: '',
             currentChatSectionId: 'question',
-            // Keep section definitions
             sectionDefinitions: sectionContent.sections || [],
-            // onboarding: data.onboarding || initialState.onboarding, // Optionally load onboarding state
         };
 
-        // --- Perform the main state update ---
         set(newState);
-        // ---
-
         console.log("Project data loaded successfully via loadProjectData (initial set). ActiveToggles:", newState.activeToggles);
 
-        // --- WORKAROUND: Force state re-read ---
-        // Schedule another small update slightly later to ensure propagation
         setTimeout(() => {
-            set(state => ({ ...state, _forceUpdate: Math.random() })); // Change dummy value
+            set(state => ({ ...state, _forceUpdate: Math.random() })); 
             console.log("Forcing state re-read after loadProjectData.");
-        }, 100); // Increased delay slightly to 100ms, adjust if needed
-        // --- END WORKAROUND ---
-
-      }, // End loadProjectData
+        }, 100); 
+      }, 
 
        expandAllSections: () => set((state) => {
-            const updatedSections = { ...state.sections };
-            Object.keys(updatedSections).forEach(sId => { if (updatedSections[sId]) updatedSections[sId].isMinimized = false; });
-            return { sections: updatedSections };
+            // This function is effectively a no-op as sections are always expanded in Pro Mode.
+            // Kept for compatibility if Pro Mode behavior changes.
+            return state;
         }),
 
-       // --- Actions for UI State ---
        openModal: (modalName) => set((state) => ({ modals: { ...state.modals, [modalName]: true } })),
        closeModal: (modalName) => set((state) => ({ modals: { ...state.modals, [modalName]: false } })),
        setLoading: (loadingType, status = true) => {
@@ -417,7 +347,6 @@ const useAppStore = create(
            set((state) => ({ onboarding: { ...state.onboarding, showHelpSplash: false } }));
        },
 
-       // --- Actions for Chat State ---
        setCurrentChatMessage: (message) => set({ currentChatMessage: message }),
        setCurrentChatSectionId: (sectionId) => set({ currentChatSectionId: sectionId || 'question' }),
        addChatMessage: (sectionId, message) => set((state) => {
@@ -468,30 +397,31 @@ const useAppStore = create(
             }
        },
     }),
-    // Persistence Options
     {
       name: 'scientific-project-planner-state',
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
          sections: state.sections,
          activeToggles: state.activeToggles,
-         proMode: state.proMode,
+         proMode: state.proMode, // Will always be true
          scores: state.scores,
          chatMessages: state.chatMessages,
          onboarding: state.onboarding,
-         uiMode: state.uiMode, // Persist UI mode
+         uiMode: state.uiMode, 
       }),
-      version: 5, // Incremented version since we've added uiMode
+      version: 6, // Incremented version for proMode default change
       onRehydrateStorage: (state) => {
-        console.log("Zustand state hydration starting (v5)...");
+        console.log("Zustand state hydration starting (v6)...");
         return (hydratedState, error) => {
           if (error) {
-            console.error("Error rehydrating Zustand state (v5):", error);
-            // Consider resetting state on critical hydration error
-            // useAppStore.getState().resetState();
+            console.error("Error rehydrating Zustand state (v6):", error);
           } else {
-            console.log("Zustand state hydration finished successfully (v5).");
-            // Optionally add migration logic here if needed based on version
+            console.log("Zustand state hydration finished successfully (v6).");
+             // If proMode is loaded as false from old state, force it to true
+            if (hydratedState && hydratedState.proMode === false) {
+              console.log("Forcing proMode to true after hydration from older state.");
+              useAppStore.setState({ proMode: true });
+            }
           }
         }
       },
@@ -501,7 +431,6 @@ const useAppStore = create(
 
 export default useAppStore;
 
-// Action to be called from App component
 export const initializeOnboardingFromLocalStorage = () => {
     useAppStore.getState()._initializeOnboarding();
 };
