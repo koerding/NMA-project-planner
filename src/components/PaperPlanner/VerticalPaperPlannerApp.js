@@ -1,11 +1,12 @@
 // FILE: src/components/PaperPlanner/VerticalPaperPlannerApp.js
-// MODIFIED: handleImproveInstructions now accepts sectionId and calls service for a single section.
+// MODIFIED: Changed saveProjectToFile to saveProjectAsJson and updated its usage.
 import React, { useEffect, useCallback } from 'react';
 import useAppStore from '../../store/appStore';
-import { improveInstruction } from '../../services/instructionImprovementService'; // This will be the modified service
+import { improveInstruction } from '../../services/instructionImprovementService';
 import { reviewPaperContent } from '../../services/paperReviewService';
-import { exportToMarkdown, exportToDocx, exportToPdf, saveProjectToFile } from '../../utils/export'; // Removed loadProjectFromFile as it's handled by store
-import sectionContentData from '../../data/sectionContent.json'; // Renamed for clarity
+// MODIFIED: Import saveProjectAsJson instead of saveProjectToFile
+import { exportToMarkdown, exportToDocx, exportToPdf, saveProjectAsJson } from '../../utils/export';
+import sectionContentData from '../../data/sectionContent.json';
 
 import MainLayout from '../layout/MainLayout';
 import SplashScreenManager from '../modals/SplashScreenManager';
@@ -15,20 +16,20 @@ import AppHeader from '../layout/AppHeader';
 const VerticalPaperPlannerApp = () => {
   const {
     initializeOnboardingFromLocalStorage,
-    sections,
-    activeToggles,
-    scores,
+    sections, // Used for constructing what saveProjectAsJson might need if not getting from store
+    activeToggles, // Same as above
+    scores, // Same as above
     modals,
     openModal,
     closeModal,
-    setLoading,
+    setLoading, // Passed to saveProjectAsJson indirectly via SaveDialog, or directly if we adapt
     setReviewData,
-    loadProjectData, // Store action for loading
+    loadProjectData,
     resetState,
     updateSectionFeedback,
     showHelpSplash: showHelpSplashAction,
     hideHelpSplash,
-    proMode,
+    proMode, // Used for constructing what saveProjectAsJson might need
     setUiMode,
     uiMode,
     currentChatSectionId,
@@ -49,21 +50,39 @@ const VerticalPaperPlannerApp = () => {
     closeModal('confirmDialog');
   }, [resetState, closeModal]);
 
+  // MODIFIED: This function will now call saveProjectAsJson.
+  // saveProjectAsJson internally gets most state from the store and prompts for filename.
+  // It primarily needs userInputs and chatMessages for backward compatibility or specific reasons.
   const handleSaveProject = useCallback(() => {
-    const projectState = {
-      sections: sections,
-      activeToggles: activeToggles,
-      scores: scores,
-      proMode: proMode,
-      chatMessages: useAppStore.getState().chatMessages,
-    };
-    saveProjectToFile(projectState, setLoading); // setLoading is from appStore now
-  }, [sections, activeToggles, scores, proMode, setLoading]);
+    setLoading('export', true); // Keep loading state consistent with other exports
+    try {
+      // Extract userInputs (content only) and chatMessages as currently expected by saveProjectAsJson
+      // though it mainly uses store data for the comprehensive save.
+      const userInputsForSave = Object.fromEntries(
+        Object.entries(sections).map(([id, data]) => [id, data.content])
+      );
+      const chatMessagesForSave = useAppStore.getState().chatMessages;
 
-  const handleLoadProject = useCallback((data) => { // This function is called by AppHeader after file is read
+      // saveProjectAsJson will prompt for filename internally
+      const success = saveProjectAsJson(userInputsForSave, chatMessagesForSave);
+      if (success) {
+        console.log("Project save initiated by saveProjectAsJson.");
+      } else {
+        console.warn("Project save may have been cancelled or failed.");
+      }
+    } catch (error) {
+      console.error("Error saving project:", error);
+      alert("Failed to save project: " + (error.message || "Unknown error"));
+    } finally {
+      setLoading('export', false);
+    }
+  }, [sections, setLoading]);
+
+
+  const handleLoadProject = useCallback((data) => {
     setLoading('project', true);
     try {
-      loadProjectData(data); // Call the store action
+      loadProjectData(data);
     } catch (error) {
       console.error("Error loading project data in VerticalPaperPlannerApp:", error);
       alert("Failed to load project: " + (error.message || "Unknown error"));
@@ -73,7 +92,7 @@ const VerticalPaperPlannerApp = () => {
   }, [loadProjectData, setLoading]);
 
   const handleExportProject = useCallback((format = 'markdown') => {
-    const projectState = { sections, activeToggles, scores, proMode };
+    const projectState = { sections, activeToggles, scores, proMode }; // This structure is for MD, DOCX, PDF
     setLoading('export', true);
     try {
       if (format === 'markdown') {
@@ -90,7 +109,6 @@ const VerticalPaperPlannerApp = () => {
     }
   }, [sections, activeToggles, scores, proMode, setLoading]);
 
-  // MODIFIED: Accepts sectionId and processes feedback for that single section
   const handleImproveInstructions = useCallback(async (sectionIdToImprove) => {
     if (!sectionIdToImprove) {
       console.error("handleImproveInstructions called without a sectionId.");
@@ -99,15 +117,12 @@ const VerticalPaperPlannerApp = () => {
     setLoading('improvement', true);
     setGlobalAiLoading(true);
     try {
-      // Pass the specific sectionId, the current state of all sections, and definitions
       const result = await improveInstruction(
         sectionIdToImprove,
-        sections, // Current state of all sections from the store
-        sectionContentData // The full section definitions (contains .sections array)
+        sections,
+        sectionContentData
       );
-
       if (result.success && result.improvedData) {
-        // result.improvedData should now be a single feedback object, not an array
         if (result.improvedData.id === sectionIdToImprove) {
           updateSectionFeedback(sectionIdToImprove, result.improvedData);
         } else {
@@ -115,7 +130,6 @@ const VerticalPaperPlannerApp = () => {
         }
       } else {
         console.error("Failed to get improved instructions for section " + sectionIdToImprove + ":", result.message);
-        // Optionally, provide user feedback about the failure
         alert(`Could not get feedback for section ${sections[sectionIdToImprove]?.title || sectionIdToImprove}. ${result.message || ''}`);
       }
     } catch (error) {
@@ -154,19 +168,15 @@ const VerticalPaperPlannerApp = () => {
     <>
       <AppHeader
         resetProject={handleResetProject}
-        exportProject={handleExportProject}
-        saveProject={() => openModal('saveDialog')}
+        exportProject={handleExportProject} // This likely opens a dialog for MD, DOCX, PDF
+        saveProject={() => openModal('saveDialog')} // This modal should now correctly trigger handleSaveProject -> saveProjectAsJson
         loadProject={handleLoadProject}
         onOpenReviewModal={() => openModal('reviewModalSetup')}
         showHelpSplash={handleShowHelpSplash}
       />
       <MainLayout
-        // sections prop might not be needed directly by MainLayout if SectionCards fetch their own data or it's passed down
-        // sections={sections}
-        // activeToggles={activeToggles}
-        // scores={scores}
         openModal={openModal}
-        onImproveInstructions={handleImproveInstructions} // This is passed to SectionCard -> FeedbackButton
+        onImproveInstructions={handleImproveInstructions}
         uiMode={uiMode}
         setUiMode={setUiMode}
         currentChatSectionId={currentChatSectionId}
@@ -177,8 +187,8 @@ const VerticalPaperPlannerApp = () => {
         modals={modals}
         closeModal={closeModal}
         confirmResetProject={confirmResetProject}
-        onExport={handleExportProject}
-        onSave={handleSaveProject}
+        onExport={handleExportProject} // For SaveDialog's other export options
+        onSave={handleSaveProject}     // For SaveDialog's "Save Project (.json)" option
         onReviewSubmit={handleReviewPaper}
         reviewData={useAppStore.getState().reviewData}
       />
