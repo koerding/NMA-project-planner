@@ -2,7 +2,7 @@
 // FIXED: Positioned chat button in global lower right corner
 // FIXED: Better mobile width and positioning support
 // FIXED: Improved mobile scrolling and fixed close button position
-
+// MODIFIED: Removed the minimized chat button
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import ReactGA from 'react-ga4';
@@ -21,7 +21,7 @@ const ModernChatInterface = ({
   currentSectionData,
   onboardingStep
 }) => {
-  const [isMinimized, setIsMinimized] = useState(true);
+  const [isMinimized, setIsMinimized] = useState(true); // Chat will start minimized
   const messagesEndRef = useRef(null);
   const previousSectionRef = useRef(null);
   const inputRef = useRef(null);
@@ -52,10 +52,10 @@ const ModernChatInterface = ({
       const handleResize = () => {
         adjustChatHeight();
       };
-      
+
       // Initial height adjustment
       adjustChatHeight();
-      
+
       window.addEventListener('resize', handleResize);
       return () => {
         window.removeEventListener('resize', handleResize);
@@ -66,37 +66,39 @@ const ModernChatInterface = ({
   // Function to adjust chat height based on viewport
   const adjustChatHeight = () => {
     if (!chatContainerRef.current) return;
-    
+
     const viewportHeight = window.innerHeight;
     const maxHeight = Math.min(Math.floor(viewportHeight * 0.8), 600); // Max 80% of viewport height or 600px
-    
+
     chatContainerRef.current.style.height = `${maxHeight}px`;
-    
+
     // Check if we need to make more space on smaller screens
     if (viewportHeight < 500) {
       chatContainerRef.current.style.height = `${Math.floor(viewportHeight * 0.7)}px`;
     }
   };
 
-  // Toggle chat window
-  const toggleChat = () => {
+  // Toggle chat window - Now only opens the chat, assumes it's initially closed/minimized
+  const openChat = () => {
     if (!currentSection || isButtonDisabled) return;
-    const newState = !isMinimized;
-    setIsMinimized(newState);
-    
-    if (!newState) {
-      // When opening, adjust height and track in analytics
-      setTimeout(() => { 
-        adjustChatHeight();
-        inputRef.current?.focus(); 
-      }, 300);
-      
-      if (ReactGA && typeof ReactGA.isInitialized === 'function' && ReactGA.isInitialized()) {
-        trackPageView(`/chat/${currentSection}`);
-        trackChatInteraction(currentSection, chatMessages?.[currentSection]?.length || 0);
-      }
+    if (isMinimized) { // Only act if currently minimized
+        setIsMinimized(false);
+
+        setTimeout(() => {
+          adjustChatHeight();
+          inputRef.current?.focus();
+        }, 300);
+
+        if (ReactGA && typeof ReactGA.isInitialized === 'function' && ReactGA.isInitialized()) {
+          trackPageView(`/chat/${currentSection}`);
+          trackChatInteraction(currentSection, chatMessages?.[currentSection]?.length || 0);
+        }
     }
   };
+
+  const closeChat = () => {
+    setIsMinimized(true);
+  }
 
   // Handle sending messages
   const handleSendMessageWithTracking = () => {
@@ -115,53 +117,33 @@ const ModernChatInterface = ({
     }
   };
 
-  const showChatHighlight = onboardingStep === 3;
+  // The chat interface is no longer controlled by a visible button when minimized.
+  // It's assumed it will be opened by other means if this component is rendered,
+  // or it will stay minimized (effectively hidden as per current CSS).
+  // For now, we'll keep the logic that it *can* be minimized, but there's no UI to unminimize it.
+  // To make it always open or controlled externally, `isMinimized` initial state and `toggleChat` would change.
+
+  // If we want to ensure it's always "open" when this component is rendered (and not toggleable here):
+  // useEffect(() => {
+  //   setIsMinimized(false); // Force open
+  //   adjustChatHeight();
+  //   inputRef.current?.focus();
+  // }, []);
+
+
   const safeChatMessages = currentSection && chatMessages?.[currentSection] ? chatMessages[currentSection] : [];
 
   if (!currentSection || !currentSectionData) {
     return null;
   }
 
-  const buttonBgClass = isButtonDisabled
-    ? 'bg-indigo-300 text-indigo-800 cursor-wait animate-pulse'
-    : 'bg-indigo-600 hover:bg-indigo-700';
 
+  // The minimized button is removed. The chat window will be hidden if isMinimized is true.
+  // To make the chat window appear, something external would need to set isMinimized to false.
+  // Or, remove the isMinimized logic entirely if the chat is always meant to be open when this component is used.
   return (
     <>
-      {/* Minimized Chat Icon Button - FIXED POSITION IN LOWER RIGHT */}
-      {isMinimized && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: '24px',
-            right: '24px',
-            zIndex: 900,
-            transform: 'none'
-          }}
-          className="chat-button-container"
-        >
-          <button
-            onClick={toggleChat}
-            disabled={isButtonDisabled}
-            className={`flex items-center justify-center px-4 py-3 rounded-full shadow-lg transition-colors text-white font-medium ${buttonBgClass}`}
-            title={isButtonDisabled ? "AI is busy..." : `Ask AI for help on ${currentSectionTitle}`}
-            aria-label="Open chat"
-          >
-            {(loading || isButtonDisabled) ? (
-                <div className="flex items-center">
-                    <svg className="animate-spin h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                    <span className="chat-button-text">Processing...</span>
-                </div>
-            ) : (
-                <div className="flex items-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
-                    <span className="chat-button-text">{`Let's talk about ${currentSectionTitle}`}</span>
-                </div>
-            )}
-          </button>
-          {showChatHighlight && (<div className="onboarding-tooltip onboarding-tooltip-chat">Stuck? Ask AI for help anytime.</div>)}
-        </div>
-      )}
+      {/* Minimized Chat Icon Button REMOVED */}
 
       {/* Expanded chat interface - IMPROVED MOBILE RESPONSIVENESS */}
       <div
@@ -194,7 +176,7 @@ const ModernChatInterface = ({
                  <span className="font-medium text-white truncate">{`Let's talk about ${currentSectionTitle}`}</span>
               </div>
               <button
-                onClick={toggleChat}
+                onClick={closeChat} // Changed from toggleChat to closeChat
                 className="text-white hover:text-gray-200 focus:outline-none ml-2 flex-shrink-0"
                 aria-label="Minimize chat"
               >
