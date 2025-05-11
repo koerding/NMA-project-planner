@@ -5,12 +5,12 @@
  * UPDATED: Increased max_tokens for the OpenAI API call.
  * UPDATED: Filters sections to only send those edited since last feedback (or never reviewed).
  * UPDATED: Excludes 'tooltip' text from subsection data sent to OpenAI to reduce payload size.
- * UPDATED: Includes previous feedback context for more consistent ratings
+ * MODIFIED: Does not send previous feedback context to the AI.
  */
 import { callOpenAI } from './openaiService';
 import { buildSystemPrompt } from '../utils/promptUtils';
 import sectionContentData from '../data/sectionContent.json';
-import useAppStore from '../store/appStore'; // Import Zustand store to access full section state
+import useAppStore from '../../store/appStore'; // Import Zustand store to access full section state
 
 /**
  * Improves instructions for multiple sections using a structured JSON approach.
@@ -32,7 +32,7 @@ export const improveBatchInstructions = async (
   forceImprovement = false // Not used anymore due to filtering logic
 ) => {
   try {
-    console.log("[Instruction Improvement] Starting instruction improvement process (filtered for edited sections, excluding tooltips)");
+    console.log("[Instruction Improvement] Starting instruction improvement process (filtered for edited sections, excluding tooltips, no previous feedback sent).");
     console.time("instructionImprovementTime");
 
     // Get the full, current sections state from the Zustand store
@@ -68,19 +68,18 @@ export const improveBatchInstructions = async (
             }))
           };
           
-          // ENHANCEMENT: Include previous feedback if available to maintain consistency
-          if (sectionState.aiInstructions) {
-            result.previousFeedback = {
-              overallFeedback: sectionState.aiInstructions.overallFeedback,
-              rating: sectionState.aiInstructions.rating,
-              // Include subsection feedback if available
-              subsections: sectionState.aiInstructions.subsections?.map(sub => ({
-                id: sub.id,
-                isComplete: sub.isComplete,
-                feedback: sub.feedback
-              }))
-            };
-          }
+          // DO NOT INCLUDE PREVIOUS FEEDBACK in the data sent to the AI
+          // if (sectionState.aiInstructions) {
+          //   result.previousFeedback = {
+          //     overallFeedback: sectionState.aiInstructions.overallFeedback,
+          //     rating: sectionState.aiInstructions.rating,
+          //     subsections: sectionState.aiInstructions.subsections?.map(sub => ({
+          //       id: sub.id,
+          //       isComplete: sub.isComplete,
+          //       feedback: sub.feedback
+          //     }))
+          //   };
+          // }
           
           return result;
         }
@@ -99,46 +98,41 @@ export const improveBatchInstructions = async (
     const systemPrompt = buildSystemPrompt('instructionImprovement');
 
     // Create the user prompt (structure unchanged, but subsection context is smaller)
-    // ENHANCEMENT: Now includes notes about previous feedback for consistency
+    // MODIFIED: Removed mention of previous feedback from the prompt to AI
     const userPrompt = `
       I need you to evaluate the following research sections based on their content against the provided instructions for each subsection.
       Return your response as a JSON object with the following structure: { "results": [ ... ] } where each result object contains 'id', 'overallFeedback', 'completionStatus', 'rating', and a 'subsections' array.
       The 'subsections' array should contain objects with 'id', 'isComplete' (boolean), and 'feedback' (string).
       
       RATING SCALE: Provide a numerical rating from 1-10 for each section based on the quality and completeness of the user's content against the instructions. 1=very poor, 5=average student work, 10=publication quality.
-      
-      IMPORTANT FOR CONSISTENCY: Some sections include previous feedback. If a section shows only minor improvements from the previous feedback, maintain a similar rating. If significant improvements were made, the rating should increase accordingly.
-      
+            
       Here are the sections and their subsection instructions to evaluate:
       ${JSON.stringify(sectionsForAnalysis, null, 2)}
-    `; 
+    `;
 
-    console.log(`[Instruction Improvement] Analyzing ${sectionsForAnalysis.length} edited/new sections with JSON structure (tooltips excluded).`);
-    // console.log("Sections being sent:", sectionsForAnalysis.map(s => s.id));
+    console.log(`[Instruction Improvement] Analyzing ${sectionsForAnalysis.length} edited/new sections with JSON structure (tooltips excluded, no previous feedback sent).`);
 
     // Call OpenAI with JSON mode and INCREASED max_tokens
     const response = await callOpenAI(
       userPrompt,
       "improve_instructions_structured",
-      // Pass the *current content* of only the sections being analyzed for context
       sectionsForAnalysis.reduce((acc, section) => { acc[section.id] = section.userContent; return acc; }, {}),
-      sectionDefs?.sections || [], // Pass section definitions for context
+      sectionDefs?.sections || [], 
       {
         temperature: 0.0,
-        max_tokens: 4096 // Keep increased tokens
+        max_tokens: 4096 
       },
       [],
       systemPrompt,
-      true // Use JSON mode
+      true 
     );
 
     console.log("[Instruction Improvement] Response received from OpenAI");
 
-    // Extract results (unchanged, relies on openaiService parsing)
     let analysisResults = [];
     if (response && response.results && Array.isArray(response.results)) {
       analysisResults = response.results;
-    } else if (Array.isArray(response)) { // Handle cases where API might return array directly
+    } else if (Array.isArray(response)) { 
         analysisResults = response;
     } else {
       console.error("[Instruction Improvement] Unexpected response format:", response);
@@ -148,7 +142,6 @@ export const improveBatchInstructions = async (
     console.log(`[Instruction Improvement] Successfully processed ${analysisResults.length} analysis results for edited sections`);
     console.timeEnd("instructionImprovementTime");
 
-    // Return the raw analysis data for the sections that were analyzed.
     return {
       success: true,
       improvedData: analysisResults
@@ -158,7 +151,6 @@ export const improveBatchInstructions = async (
     console.error("Error improving instructions:", error);
     console.timeEnd("instructionImprovementTime");
 
-    // Return error state
     return {
         success: false,
         improvedData: [],
@@ -168,6 +160,4 @@ export const improveBatchInstructions = async (
   }
 };
 
-
-// Export an alias for backwards compatibility if needed
 export const improveInstruction = improveBatchInstructions;
