@@ -1,11 +1,17 @@
 // FILE: src/components/PaperPlanner/VerticalPaperPlannerApp.js
-// MODIFIED: Changed saveProjectToFile to saveProjectAsJson and updated its usage.
+// MODIFIED: Changed imports for specific exporters to point directly to their files
+// and use their correct exported names.
 import React, { useEffect, useCallback } from 'react';
 import useAppStore from '../../store/appStore';
 import { improveInstruction } from '../../services/instructionImprovementService';
 import { reviewPaperContent } from '../../services/paperReviewService';
-// MODIFIED: Import saveProjectAsJson instead of saveProjectToFile
-import { exportToMarkdown, exportToDocx, exportToPdf, saveProjectAsJson } from '../../utils/export';
+
+// MODIFIED: Import directly from specific exporter files
+import { exportAsMarkdown } from '../../utils/export/markdownExporter'; // Corrected import
+import { exportAsDocx } from '../../utils/export/docxExporter';     // Corrected import
+import { exportAsPdf } from '../../utils/export/pdfExporter';       // Corrected import
+import { saveProjectAsJson } from '../../utils/export'; // This one is correctly from index.js
+
 import sectionContentData from '../../data/sectionContent.json';
 
 import MainLayout from '../layout/MainLayout';
@@ -16,20 +22,20 @@ import AppHeader from '../layout/AppHeader';
 const VerticalPaperPlannerApp = () => {
   const {
     initializeOnboardingFromLocalStorage,
-    sections, // Used for constructing what saveProjectAsJson might need if not getting from store
-    activeToggles, // Same as above
-    scores, // Same as above
+    sections,
+    activeToggles,
+    scores,
     modals,
     openModal,
     closeModal,
-    setLoading, // Passed to saveProjectAsJson indirectly via SaveDialog, or directly if we adapt
+    setLoading,
     setReviewData,
     loadProjectData,
     resetState,
     updateSectionFeedback,
     showHelpSplash: showHelpSplashAction,
     hideHelpSplash,
-    proMode, // Used for constructing what saveProjectAsJson might need
+    proMode,
     setUiMode,
     uiMode,
     currentChatSectionId,
@@ -50,20 +56,13 @@ const VerticalPaperPlannerApp = () => {
     closeModal('confirmDialog');
   }, [resetState, closeModal]);
 
-  // MODIFIED: This function will now call saveProjectAsJson.
-  // saveProjectAsJson internally gets most state from the store and prompts for filename.
-  // It primarily needs userInputs and chatMessages for backward compatibility or specific reasons.
   const handleSaveProject = useCallback(() => {
-    setLoading('export', true); // Keep loading state consistent with other exports
+    setLoading('export', true);
     try {
-      // Extract userInputs (content only) and chatMessages as currently expected by saveProjectAsJson
-      // though it mainly uses store data for the comprehensive save.
       const userInputsForSave = Object.fromEntries(
         Object.entries(sections).map(([id, data]) => [id, data.content])
       );
       const chatMessagesForSave = useAppStore.getState().chatMessages;
-
-      // saveProjectAsJson will prompt for filename internally
       const success = saveProjectAsJson(userInputsForSave, chatMessagesForSave);
       if (success) {
         console.log("Project save initiated by saveProjectAsJson.");
@@ -91,23 +90,33 @@ const VerticalPaperPlannerApp = () => {
     }
   }, [loadProjectData, setLoading]);
 
+  // MODIFIED: Calls the correctly imported functions
   const handleExportProject = useCallback((format = 'markdown') => {
-    const projectState = { sections, activeToggles, scores, proMode }; // This structure is for MD, DOCX, PDF
+    // For exportAsMarkdown, exportAsDocx, exportAsPdf, they expect userInputs, chatMessages, sectionContent
+    // We need to reconstruct userInputs (content only) and pass sectionDefinitions as sectionContent
+    const userInputsOnly = Object.fromEntries(
+        Object.entries(sections).map(([id, data]) => [id, data.content])
+    );
+    const chatMessages = useAppStore.getState().chatMessages; // Get current chat messages
+
     setLoading('export', true);
     try {
       if (format === 'markdown') {
-        exportToMarkdown(projectState, sectionContentData.sections);
+        // The exportAsMarkdown function in markdownExporter.js uses sectionContent to get titles etc.
+        // It internally calls getFormattedContent from exportBase.js which takes userInputs.
+        // So passing userInputsOnly and sectionContentData.sections should be okay.
+        exportAsMarkdown(userInputsOnly, chatMessages, sectionContentData.sections);
       } else if (format === 'docx') {
-        exportToDocx(projectState, sectionContentData.sections);
+        exportAsDocx(userInputsOnly, chatMessages, sectionContentData.sections);
       } else if (format === 'pdf') {
-         exportToPdf(projectState, sectionContentData.sections);
+         exportAsPdf(userInputsOnly, chatMessages, sectionContentData.sections);
       }
     } catch (error) {
       console.error(`Error exporting to ${format}:`, error);
     } finally {
       setLoading('export', false);
     }
-  }, [sections, activeToggles, scores, proMode, setLoading]);
+  }, [sections, activeToggles, scores, proMode, setLoading]); // proMode, activeToggles, scores are not directly used by exportAs... functions here
 
   const handleImproveInstructions = useCallback(async (sectionIdToImprove) => {
     if (!sectionIdToImprove) {
@@ -168,8 +177,8 @@ const VerticalPaperPlannerApp = () => {
     <>
       <AppHeader
         resetProject={handleResetProject}
-        exportProject={handleExportProject} // This likely opens a dialog for MD, DOCX, PDF
-        saveProject={() => openModal('saveDialog')} // This modal should now correctly trigger handleSaveProject -> saveProjectAsJson
+        exportProject={handleExportProject}
+        saveProject={() => openModal('saveDialog')}
         loadProject={handleLoadProject}
         onOpenReviewModal={() => openModal('reviewModalSetup')}
         showHelpSplash={handleShowHelpSplash}
@@ -187,8 +196,8 @@ const VerticalPaperPlannerApp = () => {
         modals={modals}
         closeModal={closeModal}
         confirmResetProject={confirmResetProject}
-        onExport={handleExportProject} // For SaveDialog's other export options
-        onSave={handleSaveProject}     // For SaveDialog's "Save Project (.json)" option
+        onExport={handleExportProject}
+        onSave={handleSaveProject}
         onReviewSubmit={handleReviewPaper}
         reviewData={useAppStore.getState().reviewData}
       />
