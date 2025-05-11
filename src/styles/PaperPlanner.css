@@ -1464,3 +1464,71 @@ header.bg-white.shadow-sm .container button span {
   margin: 0 !important;
 }
 */
+/* FILE: src/styles/PaperPlanner.css */
+/* ... other styles ... */
+
+/* --- Header Styling --- */
+header.bg-white.shadow-sm {
+  z-index: var(--z-index-header) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+}
+
+header .container {
+  min-height: 60px;
+}
+
+/* --- REMOVE OR COMMENT OUT THIS BLOCK START --- */
+/*
+header.bg-white.shadow-sm .container button[aria-label="Help"],
+header.bg-white.shadow-sm .container button[aria-label="Save"] {
+  max-width: 5.5rem !important;
+  width: 5.5rem !important;
+  min-width: 0 !important;
+  padding: 0.5rem 0.5rem !important;
+  margin: 0 !important;
+  font-size: 0.875rem !important;
+  line-height: 1.25rem !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 0.375rem !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+*/
+/* --- REMOVE OR COMMENT OUT THIS BLOCK END --- */
+
+/* General button styling in header - ensure this doesn't conflict or make padding consistent */
+header button {
+  /* Tailwind's 'py-2 px-3' is padding-top/bottom: 0.5rem, padding-left/right: 0.75rem */
+  /* Tailwind's 'text-sm' is font-size: 0.875rem, line-height: 1.25rem */
+  /* Let Tailwind handle padding, or ensure this matches if !important is absolutely needed */
+  padding: 0.5rem 0.75rem; /* Match Tailwind's default button padding or adjust */
+  border-radius: 0.375rem !important; /* Tailwind: rounded-md */
+  border-color: #e2e8f0 !important; /* Tailwind: border-gray-300 */
+  font-size: 0.875rem !important;
+  line-height: 1.25rem !important;
+  transition: all 0.15s ease-in-out !important;
+}
+
+header button:hover:not(:disabled) {
+  background-color: #f8fafc !important; /* Tailwind: hover:bg-gray-50 */
+  transform: translateY(-1px) !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05) !important;
+}
+
+header button:active:not(:disabled) {
+  transform: translateY(0) !important;
+}
+
+header button svg {
+  width: 1rem !important; /* Tailwind: h-4 w-4 */
+  height: 1rem !important;
+  margin-right: 0.25rem !important; /* Tailwind: mr-1. Was mr-2 (0.5rem) in JS, CSS is tighter */
+  flex-shrink: 0 !important;
+}
+
+header.bg-white.shadow-sm .container button .animate-spin {
+  margin-right: 0.25rem !important;
+}
+
+/* ... other styles ... */
