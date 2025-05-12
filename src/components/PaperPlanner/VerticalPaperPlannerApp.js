@@ -1,554 +1,289 @@
 // FILE: src/components/PaperPlanner/VerticalPaperPlannerApp.js
-// START OF FILE
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { DndProvider } from 'react-dnd';
-import { HTML5Backend } from 'react-dnd-html5-backend';
-import { TouchBackend } from 'react-dnd-touch-backend';
-import { preprint, preprintLight, dødePikselClipped, dødePikselLightClipped, amstelvar, amstelvarLight } from '@cloudinary/url-gen/qualifiers/fontHinting'; // This line seems to have unused imports, consider removing them if not needed elsewhere or for side effects.
-import SectionCard from '../sections/SectionCard';
-import HeaderCard from '../sections/HeaderCard';
-import LeftRailNavigation from '../navigation/LeftRailNavigation';
-import ModalManager from '../modals/ModalManager';
-import { SplashScreenManager } from '../modals/SplashScreenManager';
-import { sectionContent as initialSectionContent } from '../../data/sectionContent.json';
-import { generateSectionPrompts } from '../../utils/promptUtils';
-import { loadData, saveData, deleteData, listProjects } from '../../services/storageService';
-import { initializeOpenAI, getOpenAIClient, setOpenAIClient } from '../../services/openaiService'; // Corrected line
-import { exportToDOCX, exportToMarkdown, exportToPDF } from '../../utils/export';
-import { trackEvent, initializeAnalytics } from '../../utils/analyticsUtils';
-import { useAppStore } from '../../store/appStore';
-import { getSectionOrder, updateSectionOrder, initializeSectionOrder, isSectionOrderInitialized, DEFAULT_ORDER } from '../../utils/sectionOrderUtils';
-import { isTouchDevice } from '../../utils/touchDetection';
-import MainLayout from '../layout/MainLayout';
-import { reviewScientificPaper as reviewPaperContent } from '../../services/paperReviewService';
-import { logError, logInfo, logWarning, logDebug } from '../../utils/debugUtils';
-import { loadFontsFromCDN } from '../../utils/cdnLoader';
-import { processImportedDocument } from '../../services/documentImportService';
+// Key changes:
+// 1. Remove duplicate loading state tracking
+// 2. Let child components access loading states directly from the store
+// REVERTED: handleSaveWithFilename passes only section content
+// MODIFIED: Toggle handlers now set active section focus
+// UPDATED: handleSaveWithFilename to use the new approach for saving
+
+import React, { useState, useEffect, useRef } from 'react'; // Ensure useState is imported
+import ReactGA from 'react-ga4';
+import useAppStore from '../../store/appStore'; // Import the Zustand store
 import { useDocumentImport } from '../../hooks/useDocumentImport';
-import AppHeader from '../layout/AppHeader'; // Assuming AppHeader should be imported
+import { reviewScientificPaper } from '../../services/paperReviewService';
+import { improveBatchInstructions } from '../../services/instructionImprovementService';
+import { exportProject, saveProjectAsJson } from '../../utils/export'; // Use the correct export functions
+import { trackSectionChange, trackApproachToggle, trackDataMethodToggle, trackExport, trackSave } from '../../utils/analyticsUtils';
+import MainLayout from '../layout/MainLayout';
+import { ForwardedSplashScreenManager } from '../modals/SplashScreenManager';
+import '../../styles/PaperPlanner.css';
+import { getNextVisibleSectionId } from '../../utils/sectionOrderUtils';
+import sectionContentData from '../../data/sectionContent.json'; // Import section definitions
 
 
 const VerticalPaperPlannerApp = () => {
-    logInfo("VerticalPaperPlannerApp component rendering", { initialSectionContent });
-
-    const [sectionContentData, setSectionContentData] = useState(() => {
-        logDebug("Initializing sectionContentData state");
-        const initialData = initializeSectionOrder(initialSectionContent);
-        logDebug("Initialized section order in sectionContentData", initialData);
-        return initialData;
-    });
-
-    const [sectionPrompts, setSectionPrompts] = useState({});
-    const [projectName, setProjectName] = useState('defaultProject');
-    const [projects, setProjects] = useState([]);
-    const [activeModal, setActiveModal] = useState(null);
-    const [isLoading, setIsLoading] = useState(false);
-    const [activeSection, setActiveSection] = useState(null);
-    const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(true);
-    const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
-    const [error, setError] = useState(null);
-    const { isProMode, toggleProMode, showSplashScreen, setShowSplashScreen, apiKey, setApiKey } = useAppStore();
-    const [currentRightPanelContent, setCurrentRightPanelContent] = useState('instructions'); // 'instructions', 'chat', 'review'
-    const [reviewResult, setReviewResult] = useState(null);
-    const [isReviewing, setIsReviewing] = useState(false);
-
-    const backend = isTouchDevice() ? TouchBackend : HTML5Backend;
-    const mainContentRef = useRef(null);
-
-    const {
-        importedSections,
-        isImporting,
-        importError,
-        handleFileSelect: handleDocumentImportFileSelect,
-        clearImportedData: clearImportedDocumentData
-    } = useDocumentImport(setSectionContentData, sectionContentData);
+  // --- Get State and Actions from Zustand Store ---
+  const sections = useAppStore((state) => state.sections);
+  const activeToggles = useAppStore((state) => state.activeToggles);
+  const proMode = useAppStore((state) => state.proMode);
+  // Scores are managed internally by updateSectionFeedback now
+  const updateSectionContent = useAppStore((state) => state.updateSectionContent);
+  const setActiveToggle = useAppStore((state) => state.setActiveToggle);
+  const updateSectionFeedback = useAppStore((state) => state.updateSectionFeedback);
+  const resetState = useAppStore((state) => state.resetState);
+  const loadStoreProjectData = useAppStore((state) => state.loadProjectData);
+  const expandAllSections = useAppStore((state) => state.expandAllSections);
+  const modals = useAppStore((state) => state.modals);
+  const loadingFlags = useAppStore((state) => state.loading); // Get the loading object
+  const reviewData = useAppStore((state) => state.reviewData);
+  const openModal = useAppStore((state) => state.openModal);
+  const closeModal = useAppStore((state) => state.closeModal);
+  const setLoading = useAppStore((state) => state.setLoading);
+  const setReviewData = useAppStore((state) => state.setReviewData);
+  const clearReviewData = useAppStore((state) => state.clearReviewData);
+  const zustandShowHelpSplash = useAppStore((state) => state.showHelpSplash);
+  const chatMessages = useAppStore((state) => state.chatMessages);
+  const currentChatMessage = useAppStore((state) => state.currentChatMessage);
+  const currentChatSectionId = useAppStore((state) => state.currentChatSectionId);
+  const setCurrentChatMessage = useAppStore((state) => state.setCurrentChatMessage);
+  const setCurrentChatSectionId = useAppStore((state) => state.setCurrentChatSectionId); // Get this action
+  const zustandSendMessage = useAppStore((state) => state.sendMessage);
 
 
-    const updateSectionContent = useCallback((id, content, field = "content") => {
-        logDebug("updateSectionContent called", { id, field });
-        setSectionContentData(prevData => {
-            const newData = { ...prevData };
-            if (!newData[id]) {
-                logWarning(`Section with id ${id} not found in sectionContentData`, { availableIds: Object.keys(newData) });
-                return prevData; // or handle error appropriately
-            }
-            newData[id] = { ...newData[id], [field]: content };
-            logDebug("Section content updated", { id, field, newContent: newData[id] });
-            return newData;
-        });
-        trackEvent('section_content_updated', { section_id: id, field_updated: field });
-    }, []);
+  // --- Local State & Refs ---
+  // Active section ID state - this controls the focus
+  const [activeSectionId, setActiveSectionId] = useState('question');
+  const sectionRefs = useRef({});
+  const splashManagerRef = useRef(null);
+
+  // --- Get Current Section Data ---
+  const currentSectionData = sections?.[activeSectionId] || null;
+
+  // --- Document Import Hook ---
+  // Pass the store's load function and reset function
+  const { importLoading: docImportSpecificLoading, handleDocumentImport } = useDocumentImport(
+      loadStoreProjectData,
+      sectionContentData,
+      resetState
+  );
+
+  // --- Effects ---
+  useEffect(() => {
+    // Make splash manager accessible globally if needed
+    window.splashManagerRef = splashManagerRef;
+  }, []);
+
+  useEffect(() => {
+     // Update chat context when active section changes
+     // (This is now also updated directly in toggle handlers)
+     setCurrentChatSectionId(activeSectionId);
+     // Track page view only if GA is initialized
+     if (ReactGA.isInitialized) {
+         ReactGA.send({ hitType: "pageview", page: `/section/${activeSectionId}` });
+     }
+  }, [activeSectionId, setCurrentChatSectionId]); // Keep existing effect for general focus changes
+
+  useEffect(() => {
+    // Initialize refs for sections
+    if (sections) { Object.keys(sections).forEach(sectionId => { sectionRefs.current[sectionId] = sectionRefs.current[sectionId] || React.createRef(); }); }
+   }, [sections]);
+
+  useEffect(() => {
+    // Listener for opening privacy policy (e.g., from footer link)
+    const handleOpenPrivacyPolicy = () => openModal('privacyPolicy');
+    window.addEventListener('openPrivacyPolicy', handleOpenPrivacyPolicy);
+    return () => window.removeEventListener('openPrivacyPolicy', handleOpenPrivacyPolicy);
+   }, [openModal]);
 
 
-    const handleReviewPaper = useCallback(async (file) => {
-        logInfo("handleReviewPaper called");
-        if (!file) {
-            logWarning("No file provided for review.");
-            setError("Please select a file to review.");
-            return;
-        }
-        setIsReviewing(true);
-        setError(null);
-        setReviewResult(null);
-        setCurrentRightPanelContent('review'); // Switch to review tab
+  // --- Core Functions ---
+  const handleSectionFocus = (sectionId) => setActiveSectionId(sectionId);
+  const handleContentChange = (sectionId, value) => updateSectionContent(sectionId, value);
+
+  // --- MODIFIED TOGGLE HANDLERS ---
+  const handleApproachToggle = (approachId) => {
+    trackApproachToggle(approachId);
+    setActiveToggle('approach', approachId); // Update the active toggle in the store
+    setActiveSectionId(approachId); // <<< Set focus to the clicked section
+    setCurrentChatSectionId(approachId); // <<< Also update chat context immediately
+  };
+
+  const handleDataMethodToggle = (methodId) => {
+    trackDataMethodToggle(methodId);
+    setActiveToggle('dataMethod', methodId); // Update the active toggle in the store
+    setActiveSectionId(methodId); // <<< Set focus to the clicked section
+    setCurrentChatSectionId(methodId); // <<< Also update chat context immediately
+  };
+  // --- END MODIFIED TOGGLE HANDLERS ---
+
+  const handleResetRequest = () => openModal('confirmDialog');
+  const handleConfirmReset = () => { resetState(); setActiveSectionId('question'); closeModal('confirmDialog'); };
+
+  // Load project data into the store
+  const handleLoadProject = (data) => {
+    loadStoreProjectData(data); // Use the store action to load data
+    // Set active section based on loaded data, defaulting to 'question'
+    const loadedState = useAppStore.getState(); // Get state *after* loading
+    setActiveSectionId(loadedState.activeToggles?.approach || 'question');
+    expandAllSections(); // Optionally expand all sections after load
+  };
+
+  const handleSaveRequest = () => openModal('saveDialog');
+
+  // UPDATED: handleSaveWithFilename to use the new approach
+  const handleSaveWithFilename = (fileName) => {
+    trackSave();
+    // Just pass chat messages to saveProjectAsJson
+    // The function will get the full sections data from the store
+    saveProjectAsJson(null, chatMessages, fileName);
+    closeModal('saveDialog');
+  };
+
+  // Export uses only content for PDF/DOCX/MD
+  const handleExportRequest = () => {
+    trackExport('any');
+    const sectionsToExport = Object.entries(sections || {}).reduce((acc, [id, data]) => {
+      acc[id] = data?.content; // Export only the content
+      return acc;
+    }, {});
+    exportProject(sectionsToExport, chatMessages); // Pass chat messages if needed
+  };
+
+  const handleOpenExamples = () => openModal('examplesDialog');
+  const handleShowHelpSplash = () => {
+    zustandShowHelpSplash(); // Use store action
+    if (splashManagerRef.current && typeof splashManagerRef.current.showSplash === 'function') {
+      splashManagerRef.current.showSplash();
+    } else {
+      console.warn("Could not call showSplash on splashManagerRef");
+    }
+  };
+  const handleOpenReviewModal = () => openModal('reviewModal');
+  const handleReviewPaperRequest = async (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        setLoading('review', true); // Set loading state in store
         try {
-            const result = await reviewPaperContent(file, sectionContentData);
-            setReviewResult(result);
-            logInfo("Paper review successful", { result });
-            trackEvent('paper_review_success');
-        } catch (err) {
-            logError("Error reviewing paper:", err);
-            setError(`Failed to review paper: ${err.message}`);
-            setReviewResult({ error: `Failed to review paper: ${err.message}` });
-            trackEvent('paper_review_failed', { error: err.message });
-        } finally {
-            setIsReviewing(false);
-        }
-    }, [sectionContentData]);
-
-
-    const handleSave = useCallback(async () => {
-        logInfo("handleSave called", { projectName });
-        setIsLoading(true);
-        setError(null);
-        try {
-            const client = getOpenAIClient();
-            if (!client && isProMode) {
-                logWarning("OpenAI client not initialized for Pro Mode save operation.");
-            }
-            await saveData(projectName, sectionContentData, getSectionOrder());
-            logInfo("Data saved successfully for project:", projectName);
-            alert('Project saved successfully!');
-            trackEvent('project_saved', { project_name: projectName });
-            fetchProjects();
-        } catch (err) {
-            logError("Error saving data:", err);
-            setError(`Failed to save project: ${err.message}`);
-            trackEvent('project_save_failed', { project_name: projectName, error: err.message });
-        } finally {
-            setIsLoading(false);
-        }
-    }, [projectName, sectionContentData, isProMode, fetchProjects]); // Added fetchProjects to dependency array
-
-    const handleLoad = useCallback(async (name) => {
-        logInfo("handleLoad called", { name });
-        setIsLoading(true);
-        setError(null);
-        try {
-            const { data, order } = await loadData(name);
-            if (data) {
-                setSectionContentData(data);
-                if (order && Array.isArray(order) && order.length > 0) {
-                    updateSectionOrder(order);
-                } else {
-                    const currentKeys = Object.keys(data);
-                    const newOrder = DEFAULT_ORDER.filter(key => currentKeys.includes(key));
-                    currentKeys.forEach(key => {
-                        if (!newOrder.includes(key)) newOrder.push(key);
-                    });
-                    updateSectionOrder(newOrder);
-                }
-                setProjectName(name);
-                logInfo("Data loaded successfully for project:", name);
-                alert('Project loaded successfully!');
-                trackEvent('project_loaded', { project_name: name });
-            } else {
-                logWarning("No data found for project:", name);
-                setError("No data found for this project.");
-                trackEvent('project_load_not_found', { project_name: name });
-            }
-        } catch (err) {
-            logError("Error loading data:", err);
-            setError(`Failed to load project: ${err.message}`);
-            trackEvent('project_load_failed', { project_name: name, error: err.message });
-        } finally {
-            setIsLoading(false);
-            setActiveModal(null);
-        }
-    }, []);
-
-    const handleDelete = useCallback(async (name) => {
-        logInfo("handleDelete called", { name });
-        setIsLoading(true);
-        setError(null);
-        try {
-            await deleteData(name);
-            fetchProjects();
-            if (name === projectName) {
-                setProjectName('defaultProject');
-                setSectionContentData(initializeSectionOrder(initialSectionContent));
-            }
-            logInfo("Project deleted successfully:", name);
-            alert('Project deleted successfully!');
-            trackEvent('project_deleted', { project_name: name });
-        } catch (err) {
-            logError("Error deleting data:", err);
-            setError(`Failed to delete project: ${err.message}`);
-            trackEvent('project_delete_failed', { project_name: name, error: err.message });
-        } finally {
-            setIsLoading(false);
-            setActiveModal(null);
-        }
-    }, [projectName, fetchProjects]); // Added fetchProjects to dependency array
-
-    const fetchProjects = useCallback(async () => {
-        logDebug("fetchProjects called");
-        setIsLoading(true);
-        try {
-            const projectNames = await listProjects();
-            setProjects(projectNames);
-            logDebug("Projects fetched successfully", { projectNames });
-        } catch (err) {
-            logError("Error fetching projects:", err);
-            setError("Failed to fetch project list.");
-            trackEvent('fetch_projects_failed', { error: err.message });
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
-
-
-    const handleExport = useCallback(async (format) => {
-        logInfo("handleExport called", { format, projectName });
-        setError(null);
-        try {
-            const orderedContent = getSectionOrder().map(id => ({
-                title: sectionContentData[id]?.title || "Untitled Section",
-                content: sectionContentData[id]?.content || ""
-            }));
-
-            if (format === 'docx') {
-                await exportToDOCX(orderedContent, `${projectName}.docx`, sectionContentData);
-            } else if (format === 'md') {
-                await exportToMarkdown(orderedContent, `${projectName}.md`, sectionContentData);
-            } else if (format === 'pdf') {
-                await exportToPDF(orderedContent, `${projectName}.pdf`, sectionContentData);
-            }
-            logInfo("Export successful", { format });
-            trackEvent('project_exported', { format: format, project_name: projectName });
-        } catch (err)
-{
-            logError("Error exporting data:", err);
-            setError(`Failed to export project: ${err.message}`);
-            trackEvent('project_export_failed', { format: format, project_name: projectName, error: err.message });
-        }
-    }, [projectName, sectionContentData]);
-
-
-    const handleAddNewSection = useCallback((newSection) => {
-        logInfo("handleAddNewSection called", { newSection });
-        setSectionContentData(prevData => {
-            const newData = { ...prevData, [newSection.id]: newSection };
-            return newData;
-        });
-        const currentOrder = getSectionOrder();
-        updateSectionOrder([...currentOrder, newSection.id]);
-        setActiveSection(newSection.id);
-        trackEvent('section_added', { section_id: newSection.id, section_title: newSection.title });
-    }, []);
-
-    const moveSection = useCallback((dragId, hoverId) => {
-        logDebug("moveSection called", { dragId, hoverId });
-        const currentOrder = getSectionOrder();
-        const dragIndex = currentOrder.indexOf(dragId);
-        const hoverIndex = currentOrder.indexOf(hoverId);
-
-        if (dragIndex === -1 || hoverIndex === -1) {
-            logWarning("Drag or hover ID not found in current order", { dragId, hoverId, currentOrder });
-            return;
-        }
-
-        const newOrder = [...currentOrder];
-        newOrder.splice(dragIndex, 1);
-        newOrder.splice(hoverIndex, 0, dragId);
-        updateSectionOrder(newOrder);
-        trackEvent('section_moved', { dragged_section_id: dragId, target_section_id: hoverId });
-    }, []);
-
-
-    const handleGeneratePrompts = useCallback(async (sectionId) => {
-        logInfo("handleGeneratePrompts called", { sectionId });
-        if (!isProMode) {
-            logWarning("Prompt generation attempted in non-Pro mode.");
-            setActiveModal('proModeNag');
-            return;
-        }
-        if (!getOpenAIClient()) {
-            logWarning("OpenAI client not initialized for prompt generation.");
-            setActiveModal('apiKeyNeeded');
-            return;
-        }
-
-        setIsLoading(true);
-        setError(null);
-        try {
-            const section = sectionContentData[sectionId];
-            if (!section) {
-                logError(`Section ${sectionId} not found for prompt generation.`);
-                throw new Error(`Section ${sectionId} not found.`);
-            }
-            const generatedPrompts = await generateSectionPrompts(section.title, section.content, getOpenAIClient());
-            setSectionPrompts(prev => ({ ...prev, [sectionId]: generatedPrompts }));
-            updateSectionContent(sectionId, generatedPrompts.join('\n\n'), 'prompts');
-            logInfo("Prompts generated successfully", { sectionId, generatedPrompts });
-            trackEvent('prompts_generated', { section_id: sectionId });
-        } catch (err) {
-            logError("Error generating prompts:", err);
-            setError(`Failed to generate prompts: ${err.message}`);
-            trackEvent('prompts_generation_failed', { section_id: sectionId, error: err.message });
-        } finally {
-            setIsLoading(false);
-        }
-    }, [isProMode, sectionContentData, updateSectionContent]);
-
-
-    const handleAPIKeyChange = (key) => {
-        logInfo("handleAPIKeyChange called");
-        try {
-            initializeOpenAI(key);
-            setApiKey(key);
-            setError(null);
-            setActiveModal(null);
-            logInfo("OpenAI API key updated and client initialized.");
-            trackEvent('api_key_set');
-        } catch (err) {
-            logError("Error initializing OpenAI with new key:", err);
-setError("Failed to initialize OpenAI client: " + err.message);
-            trackEvent('api_key_set_failed', { error: err.message });
-        }
+            const result = await reviewScientificPaper(file);
+            if (result.success) setReviewData(result); // Update review data in store
+            else { clearReviewData(); alert(`Error reviewing paper: ${result.error || 'Unknown error'}`); }
+        } catch (error) { clearReviewData(); alert(`Error reviewing paper: ${error.message || 'Unknown error'}`); }
+        finally { setLoading('review', false); } // Clear loading state in store
     };
 
-    useEffect(() => {
-        logInfo("VerticalPaperPlannerApp component mounted");
-        initializeAnalytics();
-        loadFontsFromCDN();
+  // Request AI feedback for a section (or current active section)
+  const handleImprovementRequest = async (sectionId = null) => {
+        const targetSectionId = sectionId || activeSectionId;
+        const sectionToImprove = sections?.[targetSectionId];
 
-        if (!isSectionOrderInitialized()) {
-            logInfo("Section order not initialized, initializing with default.");
-            const initialOrder = initializeSectionOrder(initialSectionContent);
-            setSectionContentData(initialOrder);
-        } else {
-            logInfo("Section order already initialized.");
-            const currentOrder = getSectionOrder();
-            const orderedData = {};
-            currentOrder.forEach(id => {
-                if (initialSectionContent[id]) {
-                    orderedData[id] = initialSectionContent[id];
-                } else {
-                    logWarning(`Section ID ${id} from order not found in initialSectionContent`);
-                }
-            });
-            Object.keys(initialSectionContent).forEach(id => {
-                if (!orderedData[id]) {
-                    orderedData[id] = initialSectionContent[id];
-                    logDebug(`Adding section ${id} to data as it was missing from ordered init.`);
-                }
-            });
-            setSectionContentData(orderedData);
-        }
-        fetchProjects();
-
-        const storedApiKey = localStorage.getItem('openai_api_key');
-        if (storedApiKey) {
-            logInfo("Found stored API key, initializing OpenAI.");
-            setApiKey(storedApiKey);
-            try {
-                initializeOpenAI(storedApiKey);
-            } catch (error) {
-                logError("Failed to initialize OpenAI with stored key on mount:", error);
-                setError("Failed to initialize OpenAI with stored API key.");
-            }
-        } else if (isProMode) {
-            logInfo("Pro mode enabled but no API key found on mount.");
+        // Basic check if section exists and has content
+        if (!sectionToImprove || sectionToImprove.content === (sectionToImprove.placeholder || '') || sectionToImprove.content.trim() === '') {
+           alert("Please add content to the section before requesting feedback.");
+           return;
         }
 
-        const returningUser = localStorage.getItem('returningUser');
-        if (!returningUser) {
-            logInfo("New user detected, showing splash screen.");
-            setShowSplashScreen(true);
-            localStorage.setItem('returningUser', 'true');
-            trackEvent('show_splash_screen', { type: 'first_visit' });
-        } else {
-            logInfo("Returning user, splash screen not shown by default.");
-            setShowSplashScreen(false);
-        }
-        return () => {
-            logInfo("VerticalPaperPlannerApp component unmounting");
-        };
-    }, [isProMode, fetchProjects, setApiKey, setShowSplashScreen]);
+        setLoading('improvement', true); // Set loading state in store
+        try {
+            // Call the service function. It gets state from the store now.
+            const result = await improveBatchInstructions( null, null, sectionContentData );
 
-    useEffect(() => {
-        if (importedSections && Object.keys(importedSections).length > 0) {
-            logInfo("Imported sections detected, updating sectionContentData.", { importedSections });
-            setSectionContentData(prevData => {
-                const newData = { ...prevData };
-                let newOrder = getSectionOrder();
-                Object.keys(importedSections).forEach(key => {
-                    newData[key] = {
-                        ...(prevData[key] || { title: importedSections[key].title, id: key }),
-                        content: importedSections[key].content,
-                    };
-                    if (!newOrder.includes(key)) {
-                        newOrder.push(key);
+            if (result.success && result.improvedData) {
+                // Update feedback for each improved section in the store
+                result.improvedData.forEach(feedbackItem => {
+                    if (feedbackItem && feedbackItem.id) {
+                        updateSectionFeedback(feedbackItem.id, feedbackItem); // Store action updates feedback and score
                     }
                 });
-                updateSectionOrder(newOrder);
-                return newData;
-            });
-            alert("Document content has been imported into the respective sections.");
-            trackEvent('document_imported_successfully');
-        }
-        if (importError) {
-            logError("Error during document import process:", importError);
-            setError(`Document import failed: ${importError}`);
-            trackEvent('document_import_failed', { error: importError });
-        }
-    }, [importedSections, importError, clearImportedDocumentData]); // Removed clearImportedDocumentData from here, should be called more explicitly if needed
 
-
-    const currentOrder = getSectionOrder();
-    if (!currentOrder || currentOrder.length === 0) {
-        logWarning("Section order is empty or not yet initialized properly in render.", { currentOrder });
-    }
-
-    return (
-        <DndProvider backend={backend} options={{ enableMouseEvents: !isTouchDevice() }}>
-            <SplashScreenManager
-                showSplashScreen={showSplashScreen}
-                onClose={() => {
-                    setShowSplashScreen(false);
-                    trackEvent('splash_screen_closed');
-                }}
-            />
-            <ModalManager
-                activeModal={activeModal}
-                onClose={() => setActiveModal(null)}
-                onSave={handleSave}
-                onLoad={handleLoad}
-                onDelete={handleDelete}
-                onExport={handleExport}
-                onSetApiKey={handleAPIKeyChange}
-                projects={projects}
-                currentProjectName={projectName}
-                onProjectNameChange={setProjectName}
-                onAddNewSection={handleAddNewSection}
-                onImportFileSelect={handleDocumentImportFileSelect}
-                isImportingDocument={isImporting}
-                onReviewPaper={handleReviewPaper}
-                isLoading={isLoading}
-            />
-            <MainLayout
-                isLeftPanelOpen={isLeftPanelOpen}
-                setIsLeftPanelOpen={setIsLeftPanelOpen}
-                isRightPanelOpen={isRightPanelOpen}
-                setIsRightPanelOpen={setIsRightPanelOpen}
-                currentRightPanelContent={currentRightPanelContent}
-                setCurrentRightPanelContent={setCurrentRightPanelContent}
-                headerContent={
-                    <AppHeader
-                        projectName={projectName}
-                        onProjectNameChange={setProjectName}
-                        onSave={() => setActiveModal('save')}
-                        onLoad={() => { fetchProjects(); setActiveModal('load'); }}
-                        onExport={() => setActiveModal('export')}
-                        onMenuToggle={() => setIsLeftPanelOpen(!isLeftPanelOpen)}
-                        onSettings={() => setActiveModal('settings')}
-                        onNewProject={() => {
-                            setProjectName("NewProject");
-                            setSectionContentData(initializeSectionOrder(initialSectionContent));
-                            updateSectionOrder(DEFAULT_ORDER);
-                            trackEvent('new_project_created');
-                        }}
-                        onImportDocument={() => setActiveModal('importDocument')}
-                        onReviewPaper={() => setActiveModal('reviewPaper')}
-                    />
-                }
-                leftPanelContent={
-                    <LeftRailNavigation
-                        sections={currentOrder.map(id => sectionContentData[id]).filter(Boolean)}
-                        activeSection={activeSection}
-                        setActiveSection={(id) => {
-                            setActiveSection(id);
-                            if (mainContentRef.current) {
-                                const element = document.getElementById(`section-card-${id}`);
-                                if (element) {
-                                    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                }
-                            }
-                            trackEvent('navigation_section_clicked', { section_id: id });
-                        }}
-                        onToggle={() => setIsLeftPanelOpen(!isLeftPanelOpen)}
-                        isProMode={isProMode}
-                        onToggleProMode={() => {
-                            toggleProMode();
-                            if (!isProMode && !apiKey) setActiveModal('apiKeyNeeded');
-                            trackEvent('pro_mode_toggled', { enabled: !isProMode });
-                        }}
-                        onShowHelp={() => setActiveModal('help')}
-                        onAddNewSection={() => setActiveModal('addSection')}
-                    />
-                }
-                mainContentRef={mainContentRef}
-                reviewResult={reviewResult}
-                isReviewing={isReviewing}
-            >
-                {error && <div className="p-4 mb-4 text-sm text-red-700 bg-red-100 rounded-lg" role="alert">{error}</div>}
-                {isLoading && !isReviewing && <div className="p-4 mb-4 text-sm text-blue-700 bg-blue-100 rounded-lg">Loading...</div>}
-
-                <HeaderCard
-                    title={sectionContentData.header?.title || "Scientific Paper Planner"}
-                    content={sectionContentData.header?.content || "Plan your next paper with AI assistance."}
-                    onContentChange={(content) => updateSectionContent('header', content)}
-                    onTitleChange={(title) => updateSectionContent('header', title, 'title')}
-                    isProMode={isProMode}
-                />
-                {currentOrder.map((id, index) => {
-                    const section = sectionContentData[id];
-                    if (!section) {
-                        logWarning(`Section with id ${id} not found in sectionContentData during map. Order:`, currentOrder);
-                        return null;
+                // Logic to potentially advance section after feedback
+                const improvedSectionId = result.improvedData[0]?.id;
+                if (improvedSectionId === targetSectionId) {
+                    const nextSectionId = getNextVisibleSectionId(targetSectionId, activeToggles.approach, activeToggles.dataMethod);
+                    // If next section exists and is minimized, expand it
+                    if (nextSectionId && sections?.[nextSectionId]?.isMinimized) {
+                        useAppStore.getState().toggleMinimize(nextSectionId); // Use store action
                     }
-                    return (
-                        <SectionCard
-                            key={section.id}
-                            id={section.id}
-                            index={index}
-                            title={section.title}
-                            content={section.content}
-                            instructions={section.instructions}
-                            prompts={sectionPrompts[section.id] || section.prompts}
-                            onContentChange={(content) => updateSectionContent(section.id, content)}
-                            onTitleChange={(title) => updateSectionContent(section.id, title, 'title')}
-                            onInstructionChange={(instructions) => updateSectionContent(section.id, instructions, 'instructions')}
-                            onGeneratePrompts={() => handleGeneratePrompts(section.id)}
-                            onDelete={() => {
-                                const newContentData = { ...sectionContentData };
-                                delete newContentData[section.id];
-                                setSectionContentData(newContentData);
-                                const newOrder = currentOrder.filter(sId => sId !== section.id);
-                                updateSectionOrder(newOrder);
-                                trackEvent('section_deleted', { section_id: section.id });
-                            }}
-                            moveSection={moveSection}
-                            isProMode={isProMode}
-                            isActive={activeSection === section.id}
-                            onClick={() => {
-                                setActiveSection(section.id);
-                                trackEvent('section_card_clicked', { section_id: section.id });
-                            }}
-                            isLoading={isLoading && activeSection === section.id}
-                            promptsFromInstructions={section.promptsFromInstructions}
-                            onPromptsFromInstructionsChange={(value) => updateSectionContent(section.id, value, 'promptsFromInstructions')}
-                            customPrompt={section.customPrompt}
-                            onCustomPromptChange={(value) => updateSectionContent(section.id, value, 'customPrompt')}
-                        />
-                    );
-                })}
+                    // Optionally, focus the next section
+                    // if (nextSectionId) {
+                    //   setActiveSectionId(nextSectionId);
+                    // }
+                }
+            } else {
+                console.error("Improvement failed", result);
+                alert(`Failed to get feedback: ${result.message || 'Unknown error'}`);
+            }
+        } catch (error) {
+            console.error("Error improving:", error);
+            alert(`Error getting feedback: ${error.message}`);
+        } finally {
+            setLoading('improvement', false); // Clear loading state in store
+        }
+     };
+  const handleCloseReviewModal = () => closeModal('reviewModal');
 
-            </MainLayout>
-        </DndProvider>
-    );
+  // --- Props for Child Components ---
+  // Ensure sections is an object before passing down
+  const safeSections = sections || {};
+
+  const contentAreaProps = {
+        activeSection: activeSectionId, // Pass the state variable
+        activeApproach: activeToggles.approach,
+        activeDataMethod: activeToggles.dataMethod,
+        handleSectionFocus,
+        handleApproachToggle, // Pass the modified handler
+        handleDataMethodToggle, // Pass the modified handler
+        proMode,
+        handleMagic: handleImprovementRequest,
+        // Loading state is accessed by components directly from store when needed
+    };
+
+  const interactionProps = {
+      currentSection: currentChatSectionId,
+      currentSectionTitle: sections?.[currentChatSectionId]?.title || '',
+      chatMessages: chatMessages,
+      currentMessage: currentChatMessage,
+      setCurrentMessage: setCurrentChatMessage,
+      handleSendMessage: zustandSendMessage, // Use the store's send message action
+      loading: loadingFlags.chat, // Pass chat-specific loading flag
+      // isAiBusy is accessed by components directly from store when needed
+      currentSectionData: sections?.[currentChatSectionId] || null,
+  };
+
+  // --- Render ---
+  // Render loading state or the main layout
+  if (!sections || Object.keys(sections).length === 0) {
+      // This might happen briefly during initial load or if state fails
+      return <div className="p-4 text-center text-gray-500">Loading application state...</div>;
+  }
+
+  return (
+    <MainLayout
+      splashManagerRef={splashManagerRef}
+      resetProject={handleResetRequest}
+      exportProject={handleExportRequest}
+      saveProject={handleSaveRequest} // Pass the function that opens the save dialog
+      loadProject={handleLoadProject} // Pass the function that handles loading data into the store
+      importDocumentContent={handleDocumentImport} // Pass the import handler
+      onOpenReviewModal={handleOpenReviewModal}
+      openExamplesDialog={handleOpenExamples}
+      showHelpSplash={handleShowHelpSplash}
+      contentAreaProps={contentAreaProps}
+      interactionProps={interactionProps}
+      modalState={modals} // Pass modal visibility state from store
+      currentReviewData={reviewData} // Pass review data from store
+      modalActions={{
+          closeConfirmDialog: () => closeModal('confirmDialog'),
+          closeExamplesDialog: () => closeModal('examplesDialog'),
+          closeReviewModal: handleCloseReviewModal,
+          closePrivacyPolicy: () => closeModal('privacyPolicy'),
+          closeSaveDialog: () => closeModal('saveDialog'),
+          onConfirmReset: handleConfirmReset,
+      }}
+      handleReviewPaper={handleReviewPaperRequest}
+      saveWithFilename={handleSaveWithFilename} // Pass the function that performs the actual save
+      // No need to pass isAnyAiLoading as a prop anymore - components access store directly
+    />
+  );
 };
 
 export default VerticalPaperPlannerApp;
-// END OF FILE
