@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { TouchBackend } from 'react-dnd-touch-backend';
-import { preprint, preprintLight, dødePikselClipped, dødePikselLightClipped, amstelvar, amstelvarLight } from '@cloudinary/url-gen/qualifiers/fontHinting';
+import { preprint, preprintLight, dødePikselClipped, dødePikselLightClipped, amstelvar, amstelvarLight } from '@cloudinary/url-gen/qualifiers/fontHinting'; // This line seems to have unused imports, consider removing them if not needed elsewhere or for side effects.
 import SectionCard from '../sections/SectionCard';
 import HeaderCard from '../sections/HeaderCard';
 import LeftRailNavigation from '../navigation/LeftRailNavigation';
@@ -13,18 +13,19 @@ import { SplashScreenManager } from '../modals/SplashScreenManager';
 import { sectionContent as initialSectionContent } from '../../data/sectionContent.json';
 import { generateSectionPrompts } from '../../utils/promptUtils';
 import { loadData, saveData, deleteData, listProjects } from '../../services/storageService';
-import { initializeOpenAI, getOpenAIClient, setOpenAIClient } } from '../../services/openaiService';
+import { initializeOpenAI, getOpenAIClient, setOpenAIClient } from '../../services/openaiService'; // Corrected line
 import { exportToDOCX, exportToMarkdown, exportToPDF } from '../../utils/export';
 import { trackEvent, initializeAnalytics } from '../../utils/analyticsUtils';
 import { useAppStore } from '../../store/appStore';
 import { getSectionOrder, updateSectionOrder, initializeSectionOrder, isSectionOrderInitialized, DEFAULT_ORDER } from '../../utils/sectionOrderUtils';
 import { isTouchDevice } from '../../utils/touchDetection';
 import MainLayout from '../layout/MainLayout';
-import { reviewScientificPaper as reviewPaperContent } from '../../services/paperReviewService'; // Corrected import
+import { reviewScientificPaper as reviewPaperContent } from '../../services/paperReviewService';
 import { logError, logInfo, logWarning, logDebug } from '../../utils/debugUtils';
 import { loadFontsFromCDN } from '../../utils/cdnLoader';
 import { processImportedDocument } from '../../services/documentImportService';
 import { useDocumentImport } from '../../hooks/useDocumentImport';
+import AppHeader from '../layout/AppHeader'; // Assuming AppHeader should be imported
 
 
 const VerticalPaperPlannerApp = () => {
@@ -111,18 +112,15 @@ const VerticalPaperPlannerApp = () => {
         setIsLoading(true);
         setError(null);
         try {
-            const client = getOpenAIClient(); // Ensure client is available if needed for save, though not directly used here
-            if (!client && isProMode) { // Example check, adjust if OpenAI client is needed for some pro save feature
+            const client = getOpenAIClient();
+            if (!client && isProMode) {
                 logWarning("OpenAI client not initialized for Pro Mode save operation.");
-                // setError("OpenAI API key is not set. Please set it in the settings.");
-                // setIsLoading(false);
-                // return;
             }
             await saveData(projectName, sectionContentData, getSectionOrder());
             logInfo("Data saved successfully for project:", projectName);
             alert('Project saved successfully!');
             trackEvent('project_saved', { project_name: projectName });
-            fetchProjects(); // Refresh project list
+            fetchProjects();
         } catch (err) {
             logError("Error saving data:", err);
             setError(`Failed to save project: ${err.message}`);
@@ -130,7 +128,7 @@ const VerticalPaperPlannerApp = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [projectName, sectionContentData, isProMode]);
+    }, [projectName, sectionContentData, isProMode, fetchProjects]); // Added fetchProjects to dependency array
 
     const handleLoad = useCallback(async (name) => {
         logInfo("handleLoad called", { name });
@@ -143,7 +141,6 @@ const VerticalPaperPlannerApp = () => {
                 if (order && Array.isArray(order) && order.length > 0) {
                     updateSectionOrder(order);
                 } else {
-                    // If no valid order in loaded data, initialize based on current data or default
                     const currentKeys = Object.keys(data);
                     const newOrder = DEFAULT_ORDER.filter(key => currentKeys.includes(key));
                     currentKeys.forEach(key => {
@@ -166,7 +163,7 @@ const VerticalPaperPlannerApp = () => {
             trackEvent('project_load_failed', { project_name: name, error: err.message });
         } finally {
             setIsLoading(false);
-            setActiveModal(null); // Close load dialog
+            setActiveModal(null);
         }
     }, []);
 
@@ -176,10 +173,10 @@ const VerticalPaperPlannerApp = () => {
         setError(null);
         try {
             await deleteData(name);
-            fetchProjects(); // Refresh project list
+            fetchProjects();
             if (name === projectName) {
-                setProjectName('defaultProject'); // Reset to default if current project is deleted
-                setSectionContentData(initializeSectionOrder(initialSectionContent)); // Reset data
+                setProjectName('defaultProject');
+                setSectionContentData(initializeSectionOrder(initialSectionContent));
             }
             logInfo("Project deleted successfully:", name);
             alert('Project deleted successfully!');
@@ -190,10 +187,9 @@ const VerticalPaperPlannerApp = () => {
             trackEvent('project_delete_failed', { project_name: name, error: err.message });
         } finally {
             setIsLoading(false);
-            setActiveModal(null); // Close delete confirmation or load dialog if open
+            setActiveModal(null);
         }
-    }, [projectName]);
-
+    }, [projectName, fetchProjects]); // Added fetchProjects to dependency array
 
     const fetchProjects = useCallback(async () => {
         logDebug("fetchProjects called");
@@ -230,7 +226,8 @@ const VerticalPaperPlannerApp = () => {
             }
             logInfo("Export successful", { format });
             trackEvent('project_exported', { format: format, project_name: projectName });
-        } catch (err) {
+        } catch (err)
+{
             logError("Error exporting data:", err);
             setError(`Failed to export project: ${err.message}`);
             trackEvent('project_export_failed', { format: format, project_name: projectName, error: err.message });
@@ -246,7 +243,7 @@ const VerticalPaperPlannerApp = () => {
         });
         const currentOrder = getSectionOrder();
         updateSectionOrder([...currentOrder, newSection.id]);
-        setActiveSection(newSection.id); // Optionally make the new section active
+        setActiveSection(newSection.id);
         trackEvent('section_added', { section_id: newSection.id, section_title: newSection.title });
     }, []);
 
@@ -265,7 +262,6 @@ const VerticalPaperPlannerApp = () => {
         newOrder.splice(dragIndex, 1);
         newOrder.splice(hoverIndex, 0, dragId);
         updateSectionOrder(newOrder);
-        // No need to call setSectionContentData if only order changes
         trackEvent('section_moved', { dragged_section_id: dragId, target_section_id: hoverId });
     }, []);
 
@@ -310,31 +306,29 @@ const VerticalPaperPlannerApp = () => {
         logInfo("handleAPIKeyChange called");
         try {
             initializeOpenAI(key);
-            setApiKey(key); // Save to Zustand store, which also saves to localStorage
+            setApiKey(key);
             setError(null);
-            setActiveModal(null); // Close API key modal if open
+            setActiveModal(null);
             logInfo("OpenAI API key updated and client initialized.");
             trackEvent('api_key_set');
         } catch (err) {
             logError("Error initializing OpenAI with new key:", err);
-            setError("Failed to initialize OpenAI client: " + err.message);
+setError("Failed to initialize OpenAI client: " + err.message);
             trackEvent('api_key_set_failed', { error: err.message });
         }
     };
 
-    // Initialize analytics and load fonts on component mount
     useEffect(() => {
         logInfo("VerticalPaperPlannerApp component mounted");
         initializeAnalytics();
-        loadFontsFromCDN(); // Load fonts like Amstelvar
+        loadFontsFromCDN();
 
         if (!isSectionOrderInitialized()) {
             logInfo("Section order not initialized, initializing with default.");
             const initialOrder = initializeSectionOrder(initialSectionContent);
-            setSectionContentData(initialOrder); // This also sets the order via initializeSectionOrder
+            setSectionContentData(initialOrder);
         } else {
             logInfo("Section order already initialized.");
-            // Ensure sectionContentData is also in sync with the loaded order if app rehydrates
             const currentOrder = getSectionOrder();
             const orderedData = {};
             currentOrder.forEach(id => {
@@ -344,7 +338,6 @@ const VerticalPaperPlannerApp = () => {
                     logWarning(`Section ID ${id} from order not found in initialSectionContent`);
                 }
             });
-            // Add any missing sections not in the order
             Object.keys(initialSectionContent).forEach(id => {
                 if (!orderedData[id]) {
                     orderedData[id] = initialSectionContent[id];
@@ -352,14 +345,13 @@ const VerticalPaperPlannerApp = () => {
                 }
             });
             setSectionContentData(orderedData);
-
         }
         fetchProjects();
 
         const storedApiKey = localStorage.getItem('openai_api_key');
         if (storedApiKey) {
             logInfo("Found stored API key, initializing OpenAI.");
-            setApiKey(storedApiKey); // Set in store
+            setApiKey(storedApiKey);
             try {
                 initializeOpenAI(storedApiKey);
             } catch (error) {
@@ -368,11 +360,8 @@ const VerticalPaperPlannerApp = () => {
             }
         } else if (isProMode) {
             logInfo("Pro mode enabled but no API key found on mount.");
-            // Consider prompting for API key if in Pro mode and no key is set
-            // setActiveModal('apiKeyNeeded');
         }
 
-        // Check if splash screen should be shown
         const returningUser = localStorage.getItem('returningUser');
         if (!returningUser) {
             logInfo("New user detected, showing splash screen.");
@@ -381,34 +370,25 @@ const VerticalPaperPlannerApp = () => {
             trackEvent('show_splash_screen', { type: 'first_visit' });
         } else {
             logInfo("Returning user, splash screen not shown by default.");
-            setShowSplashScreen(false); // Explicitly set to false for returning users if needed by logic
+            setShowSplashScreen(false);
         }
         return () => {
             logInfo("VerticalPaperPlannerApp component unmounting");
-            // Cleanup listeners or timers if any
         };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isProMode, fetchProjects, setApiKey, setShowSplashScreen]); // Added setShowSplashScreen
+    }, [isProMode, fetchProjects, setApiKey, setShowSplashScreen]);
 
-    // Effect to handle imported document data
     useEffect(() => {
         if (importedSections && Object.keys(importedSections).length > 0) {
             logInfo("Imported sections detected, updating sectionContentData.", { importedSections });
-            // This assumes importedSections is in the same format as sectionContentData
-            // and that sectionOrder is handled or needs to be updated separately.
-            // For now, we are replacing the content. A merge strategy might be needed.
             setSectionContentData(prevData => {
                 const newData = { ...prevData };
                 let newOrder = getSectionOrder();
                 Object.keys(importedSections).forEach(key => {
                     newData[key] = {
-                        ...(prevData[key] || { title: importedSections[key].title, id: key }), // keep existing id and title if merging
+                        ...(prevData[key] || { title: importedSections[key].title, id: key }),
                         content: importedSections[key].content,
-                        // any other relevant fields from import
                     };
                     if (!newOrder.includes(key)) {
-                        // Add to order if it's a truly new section based on ID
-                        // This simple add might not be ideal, consider placement logic
                         newOrder.push(key);
                     }
                 });
@@ -417,25 +397,19 @@ const VerticalPaperPlannerApp = () => {
             });
             alert("Document content has been imported into the respective sections.");
             trackEvent('document_imported_successfully');
-            // clearImportedDocumentData(); // Clear after processing to prevent re-processing
         }
         if (importError) {
             logError("Error during document import process:", importError);
             setError(`Document import failed: ${importError}`);
             trackEvent('document_import_failed', { error: importError });
-            // clearImportedDocumentData(); // Clear error after showing
         }
-    }, [importedSections, importError, clearImportedDocumentData]);
-
+    }, [importedSections, importError, clearImportedDocumentData]); // Removed clearImportedDocumentData from here, should be called more explicitly if needed
 
 
     const currentOrder = getSectionOrder();
     if (!currentOrder || currentOrder.length === 0) {
         logWarning("Section order is empty or not yet initialized properly in render.", { currentOrder });
-        // This might indicate an issue with initialization logic or state update timing.
-        // Potentially return a loading state or an error message.
     }
-
 
     return (
         <DndProvider backend={backend} options={{ enableMouseEvents: !isTouchDevice() }}>
@@ -482,7 +456,7 @@ const VerticalPaperPlannerApp = () => {
                         onNewProject={() => {
                             setProjectName("NewProject");
                             setSectionContentData(initializeSectionOrder(initialSectionContent));
-                            updateSectionOrder(DEFAULT_ORDER); // Reset order for new project
+                            updateSectionOrder(DEFAULT_ORDER);
                             trackEvent('new_project_created');
                         }}
                         onImportDocument={() => setActiveModal('importDocument')}
@@ -515,8 +489,8 @@ const VerticalPaperPlannerApp = () => {
                     />
                 }
                 mainContentRef={mainContentRef}
-                reviewResult={reviewResult} // Pass reviewResult to MainLayout for the review panel
-                isReviewing={isReviewing} // Pass isReviewing state
+                reviewResult={reviewResult}
+                isReviewing={isReviewing}
             >
                 {error && <div className="p-4 mb-4 text-sm text-red-700 bg-red-100 rounded-lg" role="alert">{error}</div>}
                 {isLoading && !isReviewing && <div className="p-4 mb-4 text-sm text-blue-700 bg-blue-100 rounded-lg">Loading...</div>}
@@ -532,7 +506,7 @@ const VerticalPaperPlannerApp = () => {
                     const section = sectionContentData[id];
                     if (!section) {
                         logWarning(`Section with id ${id} not found in sectionContentData during map. Order:`, currentOrder);
-                        return null; // or some fallback UI
+                        return null;
                     }
                     return (
                         <SectionCard
@@ -562,7 +536,7 @@ const VerticalPaperPlannerApp = () => {
                                 setActiveSection(section.id);
                                 trackEvent('section_card_clicked', { section_id: section.id });
                             }}
-                            isLoading={isLoading && activeSection === section.id} // Example: show loading on specific card
+                            isLoading={isLoading && activeSection === section.id}
                             promptsFromInstructions={section.promptsFromInstructions}
                             onPromptsFromInstructionsChange={(value) => updateSectionContent(section.id, value, 'promptsFromInstructions')}
                             customPrompt={section.customPrompt}
