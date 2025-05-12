@@ -1,24 +1,21 @@
 // FILE: src/components/PaperPlanner/VerticalPaperPlannerApp.js
 // Key changes:
-// 1. Remove duplicate loading state tracking
-// 2. Let child components access loading states directly from the store
-// REVERTED: handleSaveWithFilename passes only section content
-// MODIFIED: Toggle handlers now set active section focus
-// UPDATED: handleSaveWithFilename to use the new approach for saving
+// 1. Updated handleImprovementRequest to only process the current section
+// 2. Passes the target section ID to improveBatchInstructions
 
-import React, { useState, useEffect, useRef } from 'react'; // Ensure useState is imported
+import React, { useState, useEffect, useRef } from 'react';
 import ReactGA from 'react-ga4';
-import useAppStore from '../../store/appStore'; // Import the Zustand store
+import useAppStore from '../../store/appStore';
 import { useDocumentImport } from '../../hooks/useDocumentImport';
 import { reviewScientificPaper } from '../../services/paperReviewService';
 import { improveBatchInstructions } from '../../services/instructionImprovementService';
-import { exportProject, saveProjectAsJson } from '../../utils/export'; // Use the correct export functions
+import { exportProject, saveProjectAsJson } from '../../utils/export';
 import { trackSectionChange, trackApproachToggle, trackDataMethodToggle, trackExport, trackSave } from '../../utils/analyticsUtils';
 import MainLayout from '../layout/MainLayout';
 import { ForwardedSplashScreenManager } from '../modals/SplashScreenManager';
 import '../../styles/PaperPlanner.css';
 import { getNextVisibleSectionId } from '../../utils/sectionOrderUtils';
-import sectionContentData from '../../data/sectionContent.json'; // Import section definitions
+import sectionContentData from '../../data/sectionContent.json';
 
 
 const VerticalPaperPlannerApp = () => {
@@ -46,7 +43,7 @@ const VerticalPaperPlannerApp = () => {
   const currentChatMessage = useAppStore((state) => state.currentChatMessage);
   const currentChatSectionId = useAppStore((state) => state.currentChatSectionId);
   const setCurrentChatMessage = useAppStore((state) => state.setCurrentChatMessage);
-  const setCurrentChatSectionId = useAppStore((state) => state.setCurrentChatSectionId); // Get this action
+  const setCurrentChatSectionId = useAppStore((state) => state.setCurrentChatSectionId);
   const zustandSendMessage = useAppStore((state) => state.sendMessage);
 
 
@@ -160,65 +157,68 @@ const VerticalPaperPlannerApp = () => {
   };
   const handleOpenReviewModal = () => openModal('reviewModal');
   const handleReviewPaperRequest = async (event) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-        setLoading('review', true); // Set loading state in store
-        try {
-            const result = await reviewScientificPaper(file);
-            if (result.success) setReviewData(result); // Update review data in store
-            else { clearReviewData(); alert(`Error reviewing paper: ${result.error || 'Unknown error'}`); }
-        } catch (error) { clearReviewData(); alert(`Error reviewing paper: ${error.message || 'Unknown error'}`); }
-        finally { setLoading('review', false); } // Clear loading state in store
-    };
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setLoading('review', true); // Set loading state in store
+    try {
+        const result = await reviewScientificPaper(file);
+        if (result.success) setReviewData(result); // Update review data in store
+        else { clearReviewData(); alert(`Error reviewing paper: ${result.error || 'Unknown error'}`); }
+    } catch (error) { clearReviewData(); alert(`Error reviewing paper: ${error.message || 'Unknown error'}`); }
+    finally { setLoading('review', false); } // Clear loading state in store
+  };
 
-  // Request AI feedback for a section (or current active section)
+  // UPDATED: Request AI feedback for a section (or current active section)
   const handleImprovementRequest = async (sectionId = null) => {
-        const targetSectionId = sectionId || activeSectionId;
-        const sectionToImprove = sections?.[targetSectionId];
+    const targetSectionId = sectionId || activeSectionId;
+    const sectionToImprove = sections?.[targetSectionId];
 
-        // Basic check if section exists and has content
-        if (!sectionToImprove || sectionToImprove.content === (sectionToImprove.placeholder || '') || sectionToImprove.content.trim() === '') {
-           alert("Please add content to the section before requesting feedback.");
-           return;
+    // Basic check if section exists and has content
+    if (!sectionToImprove || sectionToImprove.content === (sectionToImprove.placeholder || '') || sectionToImprove.content.trim() === '') {
+      alert("Please add content to the section before requesting feedback.");
+      return;
+    }
+
+    setLoading('improvement', true); // Set loading state in store
+    try {
+      // Call the updated service function with the target section ID
+      const result = await improveBatchInstructions(
+        null,                // currentSections (unused)
+        null,                // userInputs (unused)
+        sectionContentData,  // sectionContent
+        false,               // forceImprovement (unused)
+        targetSectionId      // Pass the targetSectionId as the new parameter
+      );
+
+      if (result.success && result.improvedData && result.improvedData.length > 0) {
+        // Update feedback for the improved section in the store
+        const feedbackItem = result.improvedData[0];
+        if (feedbackItem && feedbackItem.id) {
+          updateSectionFeedback(feedbackItem.id, feedbackItem);
+          
+          // Logic to potentially advance section after feedback
+          const nextSectionId = getNextVisibleSectionId(targetSectionId, activeToggles.approach, activeToggles.dataMethod);
+          // If next section exists and is minimized, expand it
+          if (nextSectionId && sections?.[nextSectionId]?.isMinimized) {
+            useAppStore.getState().toggleMinimize(nextSectionId);
+          }
+          // Optionally, focus the next section
+          // if (nextSectionId) {
+          //   setActiveSectionId(nextSectionId);
+          // }
         }
-
-        setLoading('improvement', true); // Set loading state in store
-        try {
-            // Call the service function. It gets state from the store now.
-            const result = await improveBatchInstructions( null, null, sectionContentData );
-
-            if (result.success && result.improvedData) {
-                // Update feedback for each improved section in the store
-                result.improvedData.forEach(feedbackItem => {
-                    if (feedbackItem && feedbackItem.id) {
-                        updateSectionFeedback(feedbackItem.id, feedbackItem); // Store action updates feedback and score
-                    }
-                });
-
-                // Logic to potentially advance section after feedback
-                const improvedSectionId = result.improvedData[0]?.id;
-                if (improvedSectionId === targetSectionId) {
-                    const nextSectionId = getNextVisibleSectionId(targetSectionId, activeToggles.approach, activeToggles.dataMethod);
-                    // If next section exists and is minimized, expand it
-                    if (nextSectionId && sections?.[nextSectionId]?.isMinimized) {
-                        useAppStore.getState().toggleMinimize(nextSectionId); // Use store action
-                    }
-                    // Optionally, focus the next section
-                    // if (nextSectionId) {
-                    //   setActiveSectionId(nextSectionId);
-                    // }
-                }
-            } else {
-                console.error("Improvement failed", result);
-                alert(`Failed to get feedback: ${result.message || 'Unknown error'}`);
-            }
-        } catch (error) {
-            console.error("Error improving:", error);
-            alert(`Error getting feedback: ${error.message}`);
-        } finally {
-            setLoading('improvement', false); // Clear loading state in store
-        }
-     };
+      } else {
+        console.error("Improvement failed", result);
+        alert(`Failed to get feedback: ${result.message || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error("Error improving:", error);
+      alert(`Error getting feedback: ${error.message}`);
+    } finally {
+      setLoading('improvement', false); // Clear loading state in store
+    }
+  };
+  
   const handleCloseReviewModal = () => closeModal('reviewModal');
 
   // --- Props for Child Components ---
