@@ -16,6 +16,7 @@ import { ForwardedSplashScreenManager } from '../modals/SplashScreenManager';
 import '../../styles/PaperPlanner.css';
 import { getNextVisibleSectionId } from '../../utils/sectionOrderUtils';
 import sectionContentData from '../../data/sectionContent.json';
+import '../utils/devUtils';
 
 
 const VerticalPaperPlannerApp = () => {
