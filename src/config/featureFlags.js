@@ -3,12 +3,14 @@
  * Feature flags for development and testing
  * These flags allow toggling experimental features and behaviors
  * without exposing them to general users
+ * 
+ * IMPORTANT: This is set up to work safely in both development and production
  */
 
-// The main feature flags object
+// The main feature flags object with default production-safe values
 const featureFlags = {
   // Analysis mode: 'single' processes only the current section, 'batch' processes all eligible sections
-  FEEDBACK_MODE: 'single', // 'single' or 'batch'
+  FEEDBACK_MODE: 'single', // Always defaults to 'single' in production
   
   // Other experimental features can be added here
   ENABLE_DEBUG_LOGS: false,
@@ -40,47 +42,30 @@ export const getFeatureFlag = (flagName, defaultValue = null) => {
   return defaultValue;
 };
 
-/**
- * Set a feature flag value (for development/testing purposes only)
- * This function should never be exposed to general users
- * @param {string} flagName - The name of the flag to set
- * @param {any} value - The value to set
- */
-export const setFeatureFlag = (flagName, value) => {
-  if (process.env.NODE_ENV === 'development' || isSecretDevMode()) {
-    featureFlags[flagName] = value;
-    console.log(`[DEV] Feature flag "${flagName}" set to:`, value);
-    // Optionally persist to localStorage for development
-    try {
-      localStorage.setItem('dev_feature_flags', JSON.stringify(featureFlags));
-    } catch (e) {
-      // Ignore storage errors
+// Only include dev-mode functionality in development builds
+if (process.env.NODE_ENV === 'development') {
+  /**
+   * Set a feature flag value (development only)
+   * @param {string} flagName - The name of the flag to set
+   * @param {any} value - The value to set
+   */
+  export const setFeatureFlag = (flagName, value) => {
+    if (flagName in featureFlags) {
+      featureFlags[flagName] = value;
+      console.log(`[DEV] Feature flag "${flagName}" set to:`, value);
+      // Optionally persist to localStorage for development
+      try {
+        localStorage.setItem('dev_feature_flags', JSON.stringify(featureFlags));
+      } catch (e) {
+        // Ignore storage errors
+      }
     }
-  } else {
-    console.warn('Feature flags can only be modified in development mode');
-  }
-};
+  };
 
-/**
- * Check if secret developer mode is active
- * (checked via localStorage or special URL param)
- * @returns {boolean} True if secret dev mode is active
- */
-const isSecretDevMode = () => {
-  try {
-    // Check for a special localStorage flag that only you know
-    return localStorage.getItem('kording_dev_mode') === 'true' || 
-           window.location.search.includes('devMode=kording');
-  } catch (e) {
-    return false;
-  }
-};
-
-/**
- * Initialize feature flags from localStorage (for development persistence)
- */
-const initFeatureFlags = () => {
-  if (process.env.NODE_ENV === 'development' || isSecretDevMode()) {
+  /**
+   * Initialize feature flags from localStorage (development only)
+   */
+  const initFeatureFlags = () => {
     try {
       const savedFlags = localStorage.getItem('dev_feature_flags');
       if (savedFlags) {
@@ -91,12 +76,17 @@ const initFeatureFlags = () => {
     } catch (e) {
       // Ignore storage errors
     }
-  }
-};
+  };
 
-// Initialize flags when imported
-if (typeof window !== 'undefined') {
-  initFeatureFlags();
+  // Initialize flags when imported (development only)
+  if (typeof window !== 'undefined') {
+    initFeatureFlags();
+  }
+} else {
+  // In production, provide a no-op setFeatureFlag that does nothing
+  export const setFeatureFlag = () => {
+    // No-op in production
+  };
 }
 
 export default featureFlags;
