@@ -121,20 +121,6 @@ const HamburgerMenu = ({
               </li>
               <li>
                 <button
-                  onClick={() => handleMenuAction(onOpenReviewModal)}
-                  disabled={isLoading}
-                  className="w-full text-left flex items-center px-3 py-2 text-sm rounded-md hover:bg-gray-100"
-                >
-                  {isLoading ? loadingSpinner : (
-                    <svg className="h-4 w-4 mr-2 text-gray-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  )}
-                  Review
-                </button>
-              </li>
-              <li>
-                <button
                   onClick={() => handleMenuAction(showHelpSplash)}
                   disabled={isLoading}
                   className="w-full text-left flex items-center px-3 py-2 text-sm rounded-md hover:bg-gray-100"
