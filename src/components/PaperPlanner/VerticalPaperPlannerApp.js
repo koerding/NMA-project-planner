@@ -2,6 +2,7 @@
 // Key changes:
 // 1. Updated handleImprovementRequest to only process the current section
 // 2. Passes the target section ID to improveBatchInstructions
+// 3. Safe dev tools loading that won't break production builds
 
 import React, { useState, useEffect, useRef } from 'react';
 import ReactGA from 'react-ga4';
@@ -16,8 +17,15 @@ import { ForwardedSplashScreenManager } from '../modals/SplashScreenManager';
 import '../../styles/PaperPlanner.css';
 import { getNextVisibleSectionId } from '../../utils/sectionOrderUtils';
 import sectionContentData from '../../data/sectionContent.json';
-import '../utils/devUtils';
 
+// Safe dynamic import of dev utils only in development mode
+// This won't break production builds as it's loaded conditionally
+if (process.env.NODE_ENV === 'development') {
+  // Using dynamic import to avoid it being included in production builds
+  import('../../utils/devUtils').catch(err => {
+    console.warn('Dev utils could not be loaded in development mode:', err);
+  });
+}
 
 const VerticalPaperPlannerApp = () => {
   // --- Get State and Actions from Zustand Store ---
