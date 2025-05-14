@@ -1,12 +1,11 @@
 // FILE: src/services/instructionImprovementService.js
 // MODIFIED: Added feature flag to toggle between single and batch section analysis
-// MODIFIED: Maintained ability to include previous feedback for consistency in both modes
+// MODIFIED: Made safe for production builds with fallback behavior
 
 /**
  * Enhanced service for improving instructions based on user progress
  * UPDATED: Now supports both single-section and batch mode via feature flag.
  * UPDATED: Increased max_tokens for the OpenAI API call.
- * UPDATED: Filters sections based on edit status when in batch mode.
  * UPDATED: Excludes 'tooltip' text from subsection data sent to OpenAI to reduce payload size.
  * UPDATED: Includes previous feedback context for more consistent ratings in both modes.
  */
@@ -14,7 +13,18 @@ import { callOpenAI } from './openaiService';
 import { buildSystemPrompt } from '../utils/promptUtils';
 import sectionContentData from '../data/sectionContent.json';
 import useAppStore from '../store/appStore';
-import { getFeatureFlag } from '../config/featureFlags'; 
+
+// Try to import the feature flag function, with a fallback if it fails
+let getFeatureFlag;
+try {
+  // Import synchronously first to avoid any potential issues
+  getFeatureFlag = require('../config/featureFlags').getFeatureFlag;
+} catch (e) {
+  // Fallback function that always returns 'single' mode
+  getFeatureFlag = (flagName, defaultValue) => {
+    return flagName === 'FEEDBACK_MODE' ? 'single' : defaultValue;
+  };
+}
 
 /**
  * Improves instructions for sections using a structured JSON approach.
@@ -38,21 +48,20 @@ export const improveBatchInstructions = async (
   targetSectionId = null    // Required for single mode
 ) => {
   try {
-    // Check feature flag to determine mode
+    // Check feature flag to determine mode - uses the function we defined above with fallback
     const feedbackMode = getFeatureFlag('FEEDBACK_MODE', 'single');
     const isSingleMode = feedbackMode === 'single';
     
-    console.log(`[Instruction Improvement] Starting instruction improvement process in ${feedbackMode} mode`);
-    
-    // In single mode, we need a target section ID
+    // In single mode, make sure we have a target section ID
     if (isSingleMode && !targetSectionId) {
-      console.error("[Instruction Improvement] Error: No target section ID provided for single mode");
+      console.log("[Instruction Improvement] No target section ID provided but required for single mode");
       return { 
         success: false, 
         message: "No target section ID was provided for feedback."
       };
     }
 
+    console.log(`[Instruction Improvement] Starting instruction improvement process in ${feedbackMode} mode`);
     console.time("instructionImprovementTime");
 
     // Get the full, current sections state from the Zustand store
