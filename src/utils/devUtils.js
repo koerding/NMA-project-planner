@@ -16,7 +16,12 @@ export const toggleFeedbackMode = () => {
   setFeatureFlag('FEEDBACK_MODE', newMode);
   
   // Log to console for visibility
-  console.log(`%c[DEV] Feedback Mode: ${newMode}`, 'background: #4b0082; color: white; padding: 2px 6px; border-radius: 3px');
+  const modeDescription = newMode === 'single' 
+    ? 'SINGLE SECTION MODE (analyze only current section)' 
+    : 'BATCH MODE (analyze all eligible sections)';
+    
+  console.log(`%c[DEV] Feedback Mode switched to: ${modeDescription}`, 
+    'background: #4b0082; color: white; padding: 2px 6px; border-radius: 3px');
   
   // Also create a visual notification on screen if possible
   try {
@@ -33,7 +38,14 @@ export const toggleFeedbackMode = () => {
     notificationDiv.style.transition = 'opacity 0.5s ease-in-out';
     notificationDiv.style.fontSize = '14px';
     notificationDiv.style.fontWeight = 'bold';
-    notificationDiv.textContent = `Feedback Mode: ${newMode.toUpperCase()}`;
+    
+    if (newMode === 'single') {
+      notificationDiv.textContent = '🔬 SINGLE SECTION MODE';
+      notificationDiv.title = 'Only analyzing the current active section';
+    } else {
+      notificationDiv.textContent = '🔭 BATCH MODE';
+      notificationDiv.title = 'Analyzing all eligible sections';
+    }
     
     document.body.appendChild(notificationDiv);
     
@@ -63,6 +75,12 @@ export const enableDevMode = (secretKey) => {
     try {
       localStorage.setItem('kording_dev_mode', 'true');
       console.log('%c[DEV] Developer Mode Activated', 'background: #F44336; color: white; padding: 4px 8px; border-radius: 3px');
+      
+      // Show help message
+      console.log('%c[DEV] Available commands:', 'color: #333; font-weight: bold;');
+      console.log('   window.kording.toggleMode() - Switch between single and batch feedback modes');
+      console.log('   window.kording.showFlags() - Show current feature flag values');
+      
       return true;
     } catch (e) {
       // Ignore storage errors
@@ -73,17 +91,36 @@ export const enableDevMode = (secretKey) => {
 };
 
 /**
- * Show current feature flag values in console
+ * Show current feature flag values in console with descriptions
  */
 export const showFeatureFlags = () => {
   const flags = {};
   
-  // Get values of all known flags
-  flags.FEEDBACK_MODE = getFeatureFlag('FEEDBACK_MODE', 'single');
-  flags.ENABLE_DEBUG_LOGS = getFeatureFlag('ENABLE_DEBUG_LOGS', false);
+  // Get values of all known flags with descriptions
+  const currentFeedbackMode = getFeatureFlag('FEEDBACK_MODE', 'single');
+  flags.FEEDBACK_MODE = {
+    value: currentFeedbackMode,
+    description: currentFeedbackMode === 'single' 
+      ? 'Analyzing only the current section' 
+      : 'Analyzing all eligible sections'
+  };
+  
+  flags.ENABLE_DEBUG_LOGS = {
+    value: getFeatureFlag('ENABLE_DEBUG_LOGS', false),
+    description: 'Show detailed debug logs in console'
+  };
   
   console.log('%c[DEV] Current Feature Flags:', 'background: #333; color: #33F096; font-weight: bold; padding: 4px 8px;');
-  console.table(flags);
+  
+  // Log in a more readable format than console.table
+  Object.entries(flags).forEach(([key, info]) => {
+    console.log(
+      `%c${key}:%c ${info.value}%c - ${info.description}`, 
+      'color: #4CAF50; font-weight: bold', 
+      'color: #2196F3; font-weight: bold', 
+      'color: #666'
+    );
+  });
   
   return flags;
 };
@@ -106,4 +143,9 @@ const setupDevConsole = () => {
 // Run setup when imported in development
 if (process.env.NODE_ENV === 'development') {
   setupDevConsole();
+}
+
+// Automatically check for secret dev mode in URL
+if (typeof window !== 'undefined' && window.location.search.includes('devMode=kording')) {
+  enableDevMode('kording');
 }
