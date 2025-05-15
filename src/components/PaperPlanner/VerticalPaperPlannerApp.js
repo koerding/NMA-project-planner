@@ -2,7 +2,7 @@
 // Key changes:
 // 1. Updated handleImprovementRequest to only process the current section
 // 2. Passes the target section ID to improveBatchInstructions
-// 3. Safe dev tools loading that won't break production builds
+// 3. No complicated feature flag or dev utils imports that could break the build
 
 import React, { useState, useEffect, useRef } from 'react';
 import ReactGA from 'react-ga4';
@@ -18,13 +18,37 @@ import '../../styles/PaperPlanner.css';
 import { getNextVisibleSectionId } from '../../utils/sectionOrderUtils';
 import sectionContentData from '../../data/sectionContent.json';
 
-// Safe dynamic import of dev utils only in development mode
-// This won't break production builds as it's loaded conditionally
-if (process.env.NODE_ENV === 'development') {
-  // Using dynamic import to avoid it being included in production builds
-  import('../../utils/devUtils').catch(err => {
-    console.warn('Dev utils could not be loaded in development mode:', err);
-  });
+// Simple dev mode check that's safe for production
+const isDevelopment = process.env.NODE_ENV === 'development';
+
+// Set up developer console helpers in development mode only
+if (isDevelopment && typeof window !== 'undefined') {
+  // Add dev welcome message
+  console.log('%c[DEV] Development mode enabled', 'background: #4b0082; color: white; padding: 4px 8px; border-radius: 3px');
+  
+  // Initialize kording namespace if needed
+  if (!window.kording) {
+    window.kording = {};
+  }
+  
+  // Add helper for showing current mode
+  window.kording.showMode = function() {
+    try {
+      const mode = localStorage.getItem('kording_feedback_mode') || 'single';
+      console.log(`%c[DEV] Current feedback mode: ${mode.toUpperCase()}`, 
+        'background: #333; color: #33F096; font-weight: bold; padding: 4px 8px;');
+      return mode;
+    } catch (e) {
+      return 'single';
+    }
+  };
+  
+  // Run initial check
+  setTimeout(() => {
+    if (window.kording && window.kording.showMode) {
+      window.kording.showMode();
+    }
+  }, 1000);
 }
 
 const VerticalPaperPlannerApp = () => {
@@ -190,13 +214,13 @@ const VerticalPaperPlannerApp = () => {
 
     setLoading('improvement', true); // Set loading state in store
     try {
-      // Call the updated service function with the target section ID
+      // Call the improved service function, which now manages mode internally
       const result = await improveBatchInstructions(
         null,                // currentSections (unused)
         null,                // userInputs (unused)
         sectionContentData,  // sectionContent
         false,               // forceImprovement (unused)
-        targetSectionId      // Pass the targetSectionId as the new parameter
+        targetSectionId      // Pass the targetSectionId as needed
       );
 
       if (result.success && result.improvedData && result.improvedData.length > 0) {
