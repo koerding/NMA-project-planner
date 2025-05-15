@@ -1,10 +1,9 @@
 // FILE: src/services/instructionImprovementService.js
-// MODIFIED: Added feature flag to toggle between single and batch section analysis
-// MODIFIED: Made safe for production builds with fallback behavior
+// MODIFIED: Simplified implementation with direct mode parameter
 
 /**
  * Enhanced service for improving instructions based on user progress
- * UPDATED: Now supports both single-section and batch mode via feature flag.
+ * UPDATED: Now supports both single-section and batch mode via direct parameter.
  * UPDATED: Increased max_tokens for the OpenAI API call.
  * UPDATED: Excludes 'tooltip' text from subsection data sent to OpenAI to reduce payload size.
  * UPDATED: Includes previous feedback context for more consistent ratings in both modes.
@@ -14,21 +13,91 @@ import { buildSystemPrompt } from '../utils/promptUtils';
 import sectionContentData from '../data/sectionContent.json';
 import useAppStore from '../store/appStore';
 
-// Try to import the feature flag function, with a fallback if it fails
-let getFeatureFlag;
-try {
-  // Import synchronously first to avoid any potential issues
-  getFeatureFlag = require('../config/featureFlags').getFeatureFlag;
-} catch (e) {
-  // Fallback function that always returns 'single' mode
-  getFeatureFlag = (flagName, defaultValue) => {
-    return flagName === 'FEEDBACK_MODE' ? 'single' : defaultValue;
+// Directly check if we're in development mode to enable toggle functionality
+const isDevelopment = process.env.NODE_ENV === 'development';
+
+// Try to get feedback mode setting from localStorage in dev mode only
+let defaultFeedbackMode = 'single';
+if (isDevelopment && typeof localStorage !== 'undefined') {
+  try {
+    const storedMode = localStorage.getItem('kording_feedback_mode');
+    if (storedMode === 'batch') {
+      defaultFeedbackMode = 'batch';
+      console.log('[DEV] Using stored feedback mode: batch');
+    }
+  } catch (e) {
+    // Ignore errors
+  }
+}
+
+/**
+ * Helper function to toggle feedback mode (development only)
+ * This is directly attached to window for easy access
+ */
+if (isDevelopment && typeof window !== 'undefined') {
+  window.toggleFeedbackMode = function() {
+    try {
+      const currentMode = localStorage.getItem('kording_feedback_mode') || 'single';
+      const newMode = currentMode === 'single' ? 'batch' : 'single';
+      localStorage.setItem('kording_feedback_mode', newMode);
+      
+      // Show visual notification
+      console.log(`%c[DEV] Feedback Mode switched to: ${newMode.toUpperCase()}`, 
+        'background: #4b0082; color: white; padding: 2px 6px; border-radius: 3px');
+      
+      const notificationDiv = document.createElement('div');
+      notificationDiv.style.position = 'fixed';
+      notificationDiv.style.bottom = '20px';
+      notificationDiv.style.right = '20px';
+      notificationDiv.style.backgroundColor = newMode === 'single' ? '#6200EA' : '#00C853';
+      notificationDiv.style.color = 'white';
+      notificationDiv.style.padding = '8px 16px';
+      notificationDiv.style.borderRadius = '4px';
+      notificationDiv.style.zIndex = '10000';
+      notificationDiv.style.boxShadow = '0 2px 10px rgba(0,0,0,0.2)';
+      notificationDiv.style.transition = 'opacity 0.5s ease-in-out';
+      notificationDiv.style.fontSize = '14px';
+      notificationDiv.style.fontWeight = 'bold';
+      
+      if (newMode === 'single') {
+        notificationDiv.textContent = '🔬 SINGLE SECTION MODE';
+        notificationDiv.title = 'Only analyzing the current active section';
+      } else {
+        notificationDiv.textContent = '🔭 BATCH MODE';
+        notificationDiv.title = 'Analyzing all eligible sections';
+      }
+      
+      document.body.appendChild(notificationDiv);
+      
+      // Remove notification after 3 seconds
+      setTimeout(() => {
+        notificationDiv.style.opacity = '0';
+        setTimeout(() => {
+          document.body.removeChild(notificationDiv);
+        }, 500);
+      }, 3000);
+      
+      return newMode;
+    } catch (e) {
+      console.error('Error toggling feedback mode:', e);
+      return 'single';
+    }
   };
+  
+  // Add to kording namespace if it exists
+  if (window.kording) {
+    window.kording.toggleMode = window.toggleFeedbackMode;
+  } else {
+    window.kording = { toggleMode: window.toggleFeedbackMode };
+  }
+  
+  console.log('%c[DEV] Feedback mode can be toggled with window.toggleFeedbackMode() or window.kording.toggleMode()', 
+    'color: #666; font-style: italic;');
 }
 
 /**
  * Improves instructions for sections using a structured JSON approach.
- * Can operate in either single-section or batch mode based on feature flag.
+ * Can operate in either single-section or batch mode.
  * Each section's subsections are evaluated separately for completion status and feedback.
  * Now also includes a numerical rating from 1-10.
  *
@@ -37,31 +106,49 @@ try {
  * @param {Object} sectionContent - The full, original section content definition object (still needed for definitions).
  * @param {Boolean} forceImprovement - Deprecated: Not used anymore.
  * @param {String} targetSectionId - The ID of the section to analyze (required for single mode)
+ * @param {String} mode - Optional: Override the mode ('single' or 'batch')
  * @returns {Promise<Object>} - Result with success flag and raw analysis data from AI for the section(s).
  */
 export const improveBatchInstructions = async (
-  // These parameters are kept for signature compatibility but might be cleaned up later
   currentSections, // Not directly used anymore
   userInputs,      // Not directly used anymore
   sectionContent,  // Still used for definitions
   forceImprovement = false, // Not used anymore
-  targetSectionId = null    // Required for single mode
+  targetSectionId = null,   // Required for single mode
+  mode = null               // Optional override
 ) => {
   try {
-    // Check feature flag to determine mode - uses the function we defined above with fallback
-    const feedbackMode = getFeatureFlag('FEEDBACK_MODE', 'single');
+    // Check which mode to use - first prioritize passed parameter, then dev setting, then default to single
+    let feedbackMode = 'single'; // Default to single mode in production
+    
+    if (mode === 'single' || mode === 'batch') {
+      // Use explicit mode parameter if provided
+      feedbackMode = mode;
+    } else if (isDevelopment && typeof localStorage !== 'undefined') {
+      // In development, check localStorage for saved preference
+      try {
+        const storedMode = localStorage.getItem('kording_feedback_mode');
+        if (storedMode === 'batch') {
+          feedbackMode = 'batch';
+        }
+      } catch (e) {
+        // Ignore errors
+      }
+    }
+    
     const isSingleMode = feedbackMode === 'single';
     
-    // In single mode, make sure we have a target section ID
+    console.log(`[Instruction Improvement] Starting instruction improvement process in ${feedbackMode} mode`);
+    
+    // In single mode, we need a target section ID
     if (isSingleMode && !targetSectionId) {
-      console.log("[Instruction Improvement] No target section ID provided but required for single mode");
+      console.error("[Instruction Improvement] Error: No target section ID provided for single mode");
       return { 
         success: false, 
         message: "No target section ID was provided for feedback."
       };
     }
 
-    console.log(`[Instruction Improvement] Starting instruction improvement process in ${feedbackMode} mode`);
     console.time("instructionImprovementTime");
 
     // Get the full, current sections state from the Zustand store
