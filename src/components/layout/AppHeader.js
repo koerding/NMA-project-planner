@@ -1,4 +1,4 @@
-// FILE: src/components/layout/AppHeader.js
+/NM// FILE: src/components/layout/AppHeader.js
 // MODIFIED: Added nmg icon in the center of the header
 import React, { useState, useEffect, useRef } from 'react';
 import useAppStore from '../../store/appStore';
@@ -79,11 +79,11 @@ const AppHeader = ({
           />
         </div>
 
-        {/* Middle section: NMG Icon */}
+        {/* Middle section: NMA Icon */}
         <div className="flex-grow flex justify-center items-center">
           <img 
-            src="/nmg icon.png" 
-            alt="NMG Logo" 
+            src="/nma icon.png" 
+            alt="Neuromatch Accademy Logo" 
             className="h-10 max-w-none object-contain"
           />
         </div>
