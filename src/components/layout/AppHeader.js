@@ -1,5 +1,5 @@
 // FILE: src/components/layout/AppHeader.js
-// MODIFIED: Standardized button classes for consistent sizing.
+// MODIFIED: Added nmg icon in the center of the header
 import React, { useState, useEffect, useRef } from 'react';
 import useAppStore from '../../store/appStore';
 import HamburgerMenu from '../menu/HamburgerMenu';
@@ -79,9 +79,13 @@ const AppHeader = ({
           />
         </div>
 
-        {/* Middle section: App Title (can be added back if needed) */}
-        <div className="flex-grow text-center">
-          {/* Optional: <span className="text-lg font-semibold text-gray-700">Project Planner</span> */}
+        {/* Middle section: NMG Icon */}
+        <div className="flex-grow flex justify-center items-center">
+          <img 
+            src="/nmg icon.png" 
+            alt="NMG Logo" 
+            className="h-10 max-w-none object-contain"
+          />
         </div>
 
         {/* Right section: Action Buttons */}
