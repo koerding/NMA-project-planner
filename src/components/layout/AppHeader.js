@@ -79,11 +79,11 @@ const AppHeader = ({
           />
         </div>
 
-        {/* Middle section: NMG Icon */}
+        {/* Middle section: NMA Icon */}
         <div className="flex-grow flex justify-center items-center">
           <img 
-            src="/nmg icon.png" 
-            alt="NMG Logo" 
+            src="/nma icon.png" 
+            alt="NMA Logo" 
             className="h-10 max-w-none object-contain"
           />
         </div>
